@@ -260,7 +260,7 @@ def get_connection():
 def load_normalized_jobs(conn) -> list[dict[str, Any]]:
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
-        """SELECT id, raw_job_id, job_title, company_name,
+        """SELECT id, raw_job_id, job_title, job_category, company_name,
            salary_min, salary_max, min_years_experience, max_years_experience,
            location_type, timezone_requirements
            FROM normalized_jobs ORDER BY id LIMIT 50"""
@@ -274,7 +274,8 @@ def load_normalized_candidates(conn) -> list[dict[str, Any]]:
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
         """SELECT id, raw_candidate_id, airtable_record_id, full_name, skills_summary,
-           years_of_experience, compensation_min, compensation_max, timezone
+           years_of_experience, compensation_min, compensation_max, timezone,
+           desired_job_categories
            FROM normalized_candidates ORDER BY id"""
     )
     rows = cur.fetchall()
@@ -389,6 +390,7 @@ def run_scoring(
         job_salary_max = float(_jsmax) if _jsmax is not None else None
         job_location_type = job.get("location_type")
         job_timezone = job.get("timezone_requirements")
+        job_category = (job.get("job_category") or "").strip()
 
         rows: list[tuple] = []
         for candidate in normalized_candidates:
@@ -396,6 +398,14 @@ def run_scoring(
             raw_cand_id = str(candidate.get("raw_candidate_id", ""))
             if not cand_id_norm or not raw_cand_id:
                 continue
+            # Strict filter: job category must match one of the candidate's desired job categories
+            if job_category:
+                desired = candidate.get("desired_job_categories") or []
+                desired_normalized = {
+                    (c or "").strip().lower() for c in desired if (c or "").strip()
+                }
+                if not desired_normalized or job_category.lower() not in desired_normalized:
+                    continue
             cvecs = cand_vecs_by_raw.get(raw_cand_id, {})
 
             position_keys = [k for k in cvecs if k.startswith("position_")]

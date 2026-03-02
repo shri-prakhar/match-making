@@ -33,6 +33,7 @@ from talent_matching.llm.operations.normalize_job import (
 )
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_job_to_airtable_fields
+from talent_matching.utils.dagster_async import run_with_interrupt_check
 
 # Dynamic partition definition for jobs (one partition per Airtable job record ID)
 job_partitions = DynamicPartitionsDefinition(name="jobs")
@@ -123,7 +124,7 @@ def _is_notion_url(url: str) -> bool:
     group_name="jobs",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter"},
-    code_version="2.3.0",  # v2.3: pass projected_salary to LLM for compensation extraction
+    code_version="2.3.1",  # bump after file format; no logic change
     metadata={
         "table": "normalized_jobs",
         "llm_operation": "normalize_job",
@@ -156,13 +157,16 @@ def normalized_jobs(
 
     openrouter = context.resources.openrouter
     result = asyncio.run(
-        normalize_job(
-            openrouter,
-            job_description,
-            non_negotiables=non_negotiables,
-            nice_to_have=nice_to_have,
-            location_raw=location_raw,
-            projected_salary=projected_salary,
+        run_with_interrupt_check(
+            context,
+            normalize_job(
+                openrouter,
+                job_description,
+                non_negotiables=non_negotiables,
+                nice_to_have=nice_to_have,
+                location_raw=location_raw,
+                projected_salary=projected_salary,
+            ),
         )
     )
     data = result.data
@@ -597,7 +601,7 @@ def _seniority_penalty_and_experience_score(
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.5.0",  # skill threshold, dedup, rebalanced skill 40% / location 15%
+    code_version="2.6.0",  # strict desired job category filter (candidate must list job's category)
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     metadata={
@@ -743,6 +747,7 @@ def matches(
             job_salary_max = float(job_salary_max) if job_salary_max else None
         job_location_type = job.get("location_type")
         job_timezone = job.get("timezone_requirements")
+        job_category = (job.get("job_category") or "").strip()
 
         # Per (job, candidate) raw scores; then we rescale vector_score per job
         rows: list[
@@ -766,6 +771,14 @@ def matches(
             raw_cand_id = str(candidate.get("raw_candidate_id", ""))
             if not cand_id_norm or not raw_cand_id:
                 continue
+            # Strict filter: job category must match one of the candidate's desired job categories
+            if job_category:
+                desired = candidate.get("desired_job_categories") or []
+                desired_normalized = {
+                    (c or "").strip().lower() for c in desired if (c or "").strip()
+                }
+                if not desired_normalized or job_category.lower() not in desired_normalized:
+                    continue
             cvecs = cand_vecs_by_raw.get(raw_cand_id, {})
 
             # role_sim: job role_description vs best of candidate position_*

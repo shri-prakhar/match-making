@@ -248,7 +248,7 @@ def run_scoring_for_job(record_id: str):
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute(
-        """SELECT id, raw_job_id, job_title, company_name,
+        """SELECT id, raw_job_id, job_title, job_category, company_name,
            salary_min, salary_max, min_years_experience, max_years_experience,
            location_type, timezone_requirements
            FROM normalized_jobs WHERE airtable_record_id = %s""",
