@@ -455,7 +455,7 @@ Non-negotiables are re-parsed from the current ATS text on every matchmaking run
 | ATS resource | `talent_matching/resources/airtable.py` | Method to read `Non Negotiables` and `Nice-to-have` fields |
 | Matchmaking resource | `talent_matching/resources/matchmaking.py` | Method to fetch non-negotiable text for a job |
 | Mapper | `talent_matching/utils/airtable_mapper.py` | `format_rules_for_display()` helper |
-| Setup script | `scripts/create_airtable_ats_matchmaking_columns.py` | Create `(M)` columns on ATS table |
+| Setup script (to be added) | `scripts/create_airtable_ats_matchmaking_columns.py` | Create `(M)` columns on ATS table |
 
 ---
 

@@ -1,4 +1,11 @@
-"""Dagster assets for the talent matching pipeline."""
+"""Dagster assets for the talent matching pipeline.
+
+This module is a convenience re-export for external use. Dagster definitions load
+assets via load_assets_from_modules([candidates, jobs, social]) from the submodules
+directly. Partition definitions (candidate_partitions, job_partitions) and
+Airtable ingest assets (airtable_candidates, airtable_jobs) live only in the
+submodules and are not re-exported here.
+"""
 
 from talent_matching.assets.candidates import (
     airtable_candidate_sync,

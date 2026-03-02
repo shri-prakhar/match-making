@@ -323,5 +323,5 @@ No new columns needed. The following existing columns are used:
 | Skill parser | `talent_matching/utils/skill_feedback_parser.py` | Parse `+`/`-`/`~` syntax into structured adjustments |
 | Matchmaking resource | `talent_matching/resources/matchmaking.py` | `update_match_status()`, `apply_skill_adjustments()` |
 | Definitions | `talent_matching/definitions.py` | Register new sensors |
-| Setup script | `scripts/create_airtable_feedback_columns.py` | Create `(F)` columns on Talent table |
+| Setup script (to be added) | `scripts/create_airtable_feedback_columns.py` | Create `(F)` columns on Talent table |
 | Enum update | `talent_matching/models/enums.py` | Optionally add `INTERVIEWING` to `MatchStatusEnum` |

@@ -6,16 +6,16 @@ without waiting for graceful shutdown.
 
 Usage:
   # Cancel all in-progress matchmaking runs (default)
-  uv run python scripts/force_cancel_dagster_runs.py
+  poetry run python scripts/force_cancel_dagster_runs.py
 
   # Cancel all in-progress runs (any job)
-  uv run python scripts/force_cancel_dagster_runs.py --job ''
+  poetry run python scripts/force_cancel_dagster_runs.py --job ''
 
   # Dry run: only list run IDs, do not terminate
-  uv run python scripts/force_cancel_dagster_runs.py --dry-run
+  poetry run python scripts/force_cancel_dagster_runs.py --dry-run
 
   # Custom Dagster GraphQL URL
-  uv run python scripts/force_cancel_dagster_runs.py --url http://localhost:3000/graphql
+  poetry run python scripts/force_cancel_dagster_runs.py --url http://localhost:3000/graphql
 """
 
 from __future__ import annotations

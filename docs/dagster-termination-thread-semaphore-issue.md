@@ -66,7 +66,7 @@ Conclusion: this is an upstream bug, not a wrong or outdated Dagster version in 
    to:
    - `ttype=multiprocessing.synchronize.Event`
 
-   A reusable script for this is provided at `scripts/patch_dagster_semaphore.py` — run it after any `uv sync` or dagster upgrade.
+   When implemented, a script at `scripts/patch_dagster_semaphore.py` can automate this; run it after any `poetry install` or dagster upgrade.
 
    > **Do NOT use** `ttype=multiprocessing.Event` — that is a bound method, not a class, and will raise `TypeError` at runtime.
 

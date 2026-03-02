@@ -7,9 +7,9 @@ payload as airtable_candidate_sync, and PATCHes to Airtable. On 422, prints the
 full response body so you can see Airtable's validation error.
 
 Usage:
-  uv run python scripts/test_airtable_upload_single.py [RECORD_ID]
+  poetry run python scripts/test_airtable_upload_single.py [RECORD_ID]
   # or
-  RECORD_ID=reci1JNCB8rIZuVDO uv run python scripts/test_airtable_upload_single.py
+  RECORD_ID=reci1JNCB8rIZuVDO poetry run python scripts/test_airtable_upload_single.py
 
 Requires: .env with POSTGRES_*, AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, and
   AIRTABLE_WRITE_TOKEN or AIRTABLE_API_KEY (with data.records:write).

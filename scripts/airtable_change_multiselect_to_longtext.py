@@ -14,7 +14,7 @@ Requires: AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID, AIRTABLE_SCHEMA_TOKEN (or AIRTABL
 with schema write access.
 
 Usage:
-  uv run python scripts/airtable_change_multiselect_to_longtext.py
+  poetry run python scripts/airtable_change_multiselect_to_longtext.py
 """
 
 import os

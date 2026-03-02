@@ -10,7 +10,6 @@ This module defines the asset graph for processing jobs and generating matches:
 """
 
 import asyncio
-import math
 from typing import Any
 
 from dagster import (
@@ -30,6 +29,15 @@ from talent_matching.llm.operations.normalize_job import (
 )
 from talent_matching.llm.operations.normalize_job import (
     normalize_job,
+)
+from talent_matching.matchmaking.scoring import (
+    SENIORITY_MAX_DEDUCTION,
+    compensation_fit,
+    cosine_similarity,
+    location_score,
+    seniority_penalty_and_experience_score,
+    skill_coverage_score,
+    skill_semantic_score,
 )
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_job_to_airtable_fields
@@ -347,242 +355,6 @@ LOCATION_WEIGHT = 0.15
 SKILL_RATING_WEIGHT = 0.8
 SKILL_SEMANTIC_WEIGHT = 0.2  # only applied when there is at least one matching skill
 SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
-SENIORITY_PENALTY_PER_SKILL_YEAR = 1  # points per skill when candidate years < job min_years
-SENIORITY_PENALTY_CAP = 10  # cap overall years penalty
-SENIORITY_MAX_DEDUCTION = 0.2  # cap deduction from combined (penalty_points/100, max 20%)
-SEMANTIC_PARTIAL_CREDIT_CAP = (
-    0.5  # max effective rating for a near-miss skill via embedding similarity
-)
-
-
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Cosine similarity in [0, 1]. Returns 0 if either vector is zero."""
-    if not a or not b or len(a) != len(b):
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    sim = dot / (norm_a * norm_b)
-    return max(0.0, min(1.0, sim))
-
-
-def _compensation_fit(
-    job_salary_min: float | None,
-    job_salary_max: float | None,
-    cand_comp_min: float | None,
-    cand_comp_max: float | None,
-) -> float:
-    """Overlap of job pay band with candidate expectations; 0-1. Neutral 0.5 if missing."""
-    if (
-        job_salary_min is None
-        or job_salary_max is None
-        or cand_comp_min is None
-        or cand_comp_max is None
-    ):
-        return 0.5
-    if job_salary_max <= job_salary_min:
-        return 0.5
-    overlap_start = max(job_salary_min, cand_comp_min)
-    overlap_end = min(job_salary_max, cand_comp_max)
-    if overlap_end <= overlap_start:
-        return 0.0
-    job_range = job_salary_max - job_salary_min
-    overlap = (overlap_end - overlap_start) / job_range
-    return min(1.0, overlap)
-
-
-def _location_score(
-    candidate_timezone: str | None,
-    job_timezone_requirements: str | None,
-    job_location_type: str | None,
-) -> float:
-    """Timezone overlap 0-1; weighted by location_type (remote=1, hybrid=0.7, onsite=0.5). Neutral 0.5 if missing."""
-    weight = 1.0
-    if job_location_type:
-        lt = (job_location_type or "").strip().lower()
-        if lt == "remote":
-            weight = 1.0
-        elif lt == "hybrid":
-            weight = 0.7
-        else:
-            weight = 0.5
-    if not candidate_timezone and not job_timezone_requirements:
-        return 0.5
-    if not candidate_timezone or not job_timezone_requirements:
-        return 0.5 * weight
-
-    def parse_tz(s: str) -> float | None:
-        """Parse a timezone string to a UTC offset in hours.
-
-        Handles UTC offset format ("UTC-5", "UTC+05:30", "GMT+1") and
-        IANA timezone names ("America/New_York", "Asia/Kolkata").
-        """
-        stripped = s.strip()
-        if not stripped or stripped.lower() == "null":
-            return None
-        upper = stripped.upper().replace(" ", "")
-        if upper.startswith(("UTC", "GMT")):
-            prefix_len = 3
-            rest = upper[prefix_len:].strip()
-            if not rest or rest == "0":
-                return 0.0
-            sign = 1 if rest.startswith("+") else -1
-            rest = rest.lstrip("+-")
-            if ":" in rest:
-                parts = rest.split(":")
-                if parts[0].isdigit() and parts[1].isdigit():
-                    return sign * (int(parts[0]) + int(parts[1]) / 60)
-            num = rest.split("/")[0].split("-")[0].split("+")[0]
-            if num.isdigit():
-                return sign * float(num)
-            return None
-        if "/" not in stripped:
-            return None
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
-        zi = ZoneInfo(stripped)
-        offset = datetime.now(zi).utcoffset()
-        if offset is not None:
-            return offset.total_seconds() / 3600
-        return None
-
-    c_tz = parse_tz(candidate_timezone)
-    j_tz_str = (job_timezone_requirements or "").strip()
-    if " to " in j_tz_str:
-        parts = j_tz_str.split(" to ")
-        j_lo = parse_tz(parts[0]) if parts else None
-        j_hi = parse_tz(parts[1]) if len(parts) > 1 else None
-    else:
-        single = parse_tz(j_tz_str)
-        j_lo = single
-        j_hi = single
-    if c_tz is None or (j_lo is None and j_hi is None):
-        return 0.5 * weight
-    lo: float = j_lo if j_lo is not None else (j_hi or 0.0)
-    hi: float = j_hi if j_hi is not None else (j_lo or 0.0)
-    if lo > hi:
-        lo, hi = hi, lo
-    if lo <= c_tz <= hi:
-        return 1.0 * weight
-    diff = min(abs(c_tz - lo), abs(c_tz - hi))
-    overlap = max(0.0, 1.0 - diff / 12.0)
-    return overlap * weight
-
-
-def _skill_coverage_score(
-    req_skills: list[dict[str, Any]],
-    cand_skills_map: dict[str, tuple[float, int | None]],
-    job_skill_vecs: dict[str, list[float]] | None = None,
-    cand_skill_vecs: dict[str, list[float]] | None = None,
-) -> float:
-    """0-1: how well candidate skills cover job required skills (name + proficiency).
-
-    Must-have skills have 3x weight of nice-to-have. Missing skill contributes 0
-    for that component (no separate flat penalty).
-
-    When a job specifies min_level for a skill, candidates below that threshold
-    receive a proportional penalty (rating / required_level). Candidates at or
-    above the threshold get full credit.
-
-    When a required skill has no exact canonical match in the candidate's profile
-    but both job and candidate skill vectors are available, the most similar
-    candidate skill vector is found and partial credit is granted, capped by
-    SEMANTIC_PARTIAL_CREDIT_CAP.
-    """
-    if not req_skills:
-        return 1.0
-    total_weight = 0.0
-    scored = 0.0
-
-    cand_vec_keys = (
-        [k for k in cand_skill_vecs if k.startswith("skill_")] if cand_skill_vecs else []
-    )
-
-    for s in req_skills:
-        name = (s.get("skill_name") or "").strip()
-        if not name:
-            continue
-        req_type = s.get("requirement_type") or "must_have"
-        w = 3.0 if req_type == "must_have" else 1.0
-        total_weight += w
-        rating, _years = cand_skills_map.get(name, (0.0, None))
-
-        if rating == 0.0 and job_skill_vecs and cand_skill_vecs and cand_vec_keys:
-            job_vec = job_skill_vecs.get(skill_vector_key(name))
-            if job_vec:
-                max_sim = max(
-                    _cosine_similarity(job_vec, cand_skill_vecs[k]) for k in cand_vec_keys
-                )
-                rating = max_sim * SEMANTIC_PARTIAL_CREDIT_CAP
-
-        level_factor = 1.0
-        min_level = s.get("min_level")
-        if min_level is not None and rating > 0:
-            min_level_norm = min_level / 10.0
-            if rating < min_level_norm:
-                level_factor = rating / min_level_norm
-
-        scored += rating * w * level_factor
-    if total_weight == 0:
-        return 1.0
-    return min(1.0, scored / total_weight)
-
-
-def _skill_semantic_score(
-    job_role_vec: list[float] | None,
-    cand_skill_vecs: dict[str, list[float]],
-    req_skills: list[dict[str, Any]] | None = None,
-    job_skill_vecs: dict[str, list[float]] | None = None,
-) -> float:
-    """0-1: per-skill job expected_capability vs candidate skill_* when both exist; else role vs max cand skill."""
-    if req_skills and job_skill_vecs:
-        total_weight = 0.0
-        weighted_sim = 0.0
-        for s in req_skills:
-            name = (s.get("skill_name") or "").strip()
-            if not name:
-                continue
-            key = skill_vector_key(name)
-            job_vec = job_skill_vecs.get(key)
-            cand_vec = cand_skill_vecs.get(key)
-            if job_vec and cand_vec:
-                w = 3.0 if (s.get("requirement_type") or "must_have") == "must_have" else 1.0
-                total_weight += w
-                weighted_sim += _cosine_similarity(job_vec, cand_vec) * w
-        if total_weight > 0:
-            return weighted_sim / total_weight
-    # Fallback: job role_description vs max similarity to candidate skill_* vectors
-    if not job_role_vec:
-        return 0.5
-    skill_keys = [k for k in cand_skill_vecs if k.startswith("skill_")]
-    if not skill_keys:
-        return 0.0
-    sims = [_cosine_similarity(job_role_vec, cand_skill_vecs[k]) for k in skill_keys]
-    return max(sims) if sims else 0.0
-
-
-def _seniority_penalty_and_experience_score(
-    job_min_years: int | None,
-    job_max_years: int | None,
-    cand_years: int | None,
-    req_skills_with_min_years: list[tuple[str, int, str]],
-    cand_skills_map: dict[str, tuple[float, int | None]],
-) -> tuple[float, float]:
-    """Returns (penalty_points, experience_match_score 0-1)."""
-    penalty = 0.0
-    if job_min_years is not None and cand_years is not None and cand_years < job_min_years:
-        short = job_min_years - cand_years
-        penalty += min(SENIORITY_PENALTY_CAP, short * SENIORITY_PENALTY_PER_YEAR)
-    for skill_name, min_years, req_type in req_skills_with_min_years:
-        _, cand_y = cand_skills_map.get(skill_name, (0.0, None))
-        if cand_y is not None and min_years is not None and cand_y < min_years:
-            penalty += (min_years - cand_y) * SENIORITY_PENALTY_PER_SKILL_YEAR
-    max_penalty = SENIORITY_PENALTY_CAP + 5 * SENIORITY_PENALTY_PER_SKILL_YEAR
-    experience_match_score = max(0.0, 1.0 - penalty / max_penalty) if max_penalty else 1.0
-    return penalty, experience_match_score
 
 
 @asset(
@@ -601,7 +373,7 @@ def _seniority_penalty_and_experience_score(
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.6.0",  # strict desired job category filter (candidate must list job's category)
+    code_version="2.6.1",  # refactored to use shared matchmaking.scoring
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     metadata={
@@ -784,19 +556,19 @@ def matches(
             # role_sim: job role_description vs best of candidate position_*
             position_keys = [k for k in cvecs if k.startswith("position_")]
             if job_role_vec and position_keys:
-                role_sim = max(_cosine_similarity(job_role_vec, cvecs[k]) for k in position_keys)
+                role_sim = max(cosine_similarity(job_role_vec, cvecs[k]) for k in position_keys)
             elif job_role_vec and cvecs.get("experience"):
-                role_sim = _cosine_similarity(job_role_vec, cvecs["experience"])
+                role_sim = cosine_similarity(job_role_vec, cvecs["experience"])
             else:
                 role_sim = 0.0
 
             domain_sim = (
-                _cosine_similarity(job_domain_vec, cvecs["domain"])
+                cosine_similarity(job_domain_vec, cvecs["domain"])
                 if job_domain_vec and cvecs.get("domain")
                 else 0.0
             )
             culture_sim = (
-                _cosine_similarity(job_personality_vec, cvecs["personality"])
+                cosine_similarity(job_personality_vec, cvecs["personality"])
                 if job_personality_vec and cvecs.get("personality")
                 else 0.0
             )
@@ -820,10 +592,10 @@ def matches(
             missing_nice = [s for s in nice_to_have if s not in candidate_skill_names]
             matching = [s for s in must_have + nice_to_have if s in candidate_skill_names]
 
-            skill_coverage = _skill_coverage_score(
+            skill_coverage = skill_coverage_score(
                 req_skills, cand_skills_map_for_cand, jvecs, cvecs
             )
-            skill_semantic = _skill_semantic_score(
+            skill_semantic = skill_semantic_score(
                 job_role_vec, cvecs, req_skills=req_skills, job_skill_vecs=jvecs
             )
             # Semantic only when at least one skill matches; then 80% rating, 20% semantic (tie-breaker)
@@ -837,7 +609,7 @@ def matches(
             cand_years = candidate.get("years_of_experience")
             if cand_years is not None and not isinstance(cand_years, int):
                 cand_years = int(cand_years) if cand_years else None
-            seniority_penalty, experience_match_score = _seniority_penalty_and_experience_score(
+            seniority_penalty, experience_match_score = seniority_penalty_and_experience_score(
                 job_min_years,
                 job.get("max_years_experience"),
                 cand_years,
@@ -851,7 +623,7 @@ def matches(
                 comp_min = float(comp_min) if comp_min else None
             if comp_max is not None and not isinstance(comp_max, int | float):
                 comp_max = float(comp_max) if comp_max else None
-            compensation_match_score = _compensation_fit(
+            compensation_match_score = compensation_fit(
                 job_salary_min,
                 job_salary_max,
                 comp_min,
@@ -859,7 +631,7 @@ def matches(
             )
 
             cand_timezone = candidate.get("timezone")
-            location_match_score = _location_score(cand_timezone, job_timezone, job_location_type)
+            location_match_score = location_score(cand_timezone, job_timezone, job_location_type)
 
             if skill_fit_score < SKILL_MIN_THRESHOLD:
                 continue
