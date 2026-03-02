@@ -29,6 +29,7 @@ from talent_matching.llm import PDFEngine, embed_text, extract_pdf_from_url, nor
 from talent_matching.models.enums import PROFICIENCY_LEVELS
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_candidate_to_airtable_fields
+from talent_matching.utils.dagster_async import run_with_interrupt_check
 
 # Dynamic partition definition for candidates
 # Each candidate record gets its own partition key (Airtable record ID)
@@ -209,7 +210,7 @@ def raw_candidates(
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="postgres_io",
-    code_version="2.1.0",  # v2.1.0: (bump for normalization/storage changes)
+    code_version="2.1.1",  # bump after file changes; no logic change
     op_tags={
         "dagster/concurrency_key": "openrouter_api",
     },
@@ -326,12 +327,16 @@ def normalized_candidates(
             "Set it in .env or export it before running the pipeline."
         )
 
-    # Call normalize_cv with BOTH sources - it will merge them
+    # Run with interrupt check so cancellation in the UI exits the step promptly
+    # (avoids runs stuck in CANCELING when blocked on OpenRouter).
     result = asyncio.run(
-        normalize_cv(
-            openrouter,
-            raw_cv_text=cv_text_airtable,
-            cv_text_pdf=cv_text_pdf,
+        run_with_interrupt_check(
+            context,
+            normalize_cv(
+                openrouter,
+                raw_cv_text=cv_text_airtable,
+                cv_text_pdf=cv_text_pdf,
+            ),
         )
     )
 

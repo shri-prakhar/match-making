@@ -344,12 +344,50 @@ _JOB_LIST_FIELDS = {
     "nice_to_have_skills",
 }
 
+# Airtable column filled from normalized job narratives (not (N)-prefixed)
+SMART_IDEAL_CANDIDATE_PROFILE_FIELD = "SMART IDEAL CANDIDATE PROFILE"
+
+# Order of narrative sections in the combined profile
+_JOB_PROFILE_NARRATIVE_KEYS = [
+    "narrative_role",
+    "narrative_experience",
+    "narrative_domain",
+    "narrative_technical",
+    "narrative_personality",
+    "narrative_impact",
+]
+
+
+def build_smart_ideal_candidate_profile(job: dict[str, Any]) -> str | None:
+    """Build SMART IDEAL CANDIDATE PROFILE text from normalized job narrative prose fields.
+
+    Concatenates role, experience, domain, technical, personality, and impact narratives
+    with section headers. Returns None if no narrative content is present.
+    """
+    sections: list[str] = []
+    labels = {
+        "narrative_role": "Role",
+        "narrative_experience": "Experience",
+        "narrative_domain": "Domain",
+        "narrative_technical": "Technical",
+        "narrative_personality": "Personality",
+        "narrative_impact": "Impact",
+    }
+    for key in _JOB_PROFILE_NARRATIVE_KEYS:
+        text = job.get(key)
+        if isinstance(text, str) and text.strip():
+            sections.append(f"{labels[key]}\n{text.strip()}")
+    if not sections:
+        return None
+    return "\n\n".join(sections)
+
 
 def normalized_job_to_airtable_fields(job: dict[str, Any]) -> dict[str, Any]:
     """Build Airtable PATCH fields dict from a NormalizedJob row (dict).
 
     Uses AIRTABLE_JOBS_WRITEBACK_FIELDS. Skips None values. Coerces enums, datetimes,
-    lists (comma-separated), and booleans for Airtable API.
+    lists (comma-separated), and booleans for Airtable API. Also populates
+    SMART IDEAL CANDIDATE PROFILE from the narrative prose fields.
     """
     fields: dict[str, Any] = {}
     for our_key, airtable_col in AIRTABLE_JOBS_WRITEBACK_FIELDS.items():
@@ -360,6 +398,11 @@ def normalized_job_to_airtable_fields(job: dict[str, Any]) -> dict[str, Any]:
         if coerced is None:
             continue
         fields[airtable_col] = coerced
+
+    profile = build_smart_ideal_candidate_profile(job)
+    if profile is not None:
+        fields[SMART_IDEAL_CANDIDATE_PROFILE_FIELD] = profile
+
     return fields
 
 

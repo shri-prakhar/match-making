@@ -159,17 +159,6 @@ job_ingest_job = define_asset_job(
     partitions_def=job_partitions,
 )
 
-matchmaking_job = define_asset_job(
-    name="matchmaking",
-    description=(
-        "Compute job–candidate matches (scoring) per job. One partition per job; run "
-        "after job_pipeline and candidate_pipeline backfills. Backfill to select job partitions."
-    ),
-    selection=[matches],
-    partitions_def=job_partitions,
-    tags={"dagster/concurrency_limit": "matchmaking"},
-)
-
 upload_normalized_jobs_to_airtable_job = define_asset_job(
     name="upload_normalized_jobs_to_airtable",
     description=(
@@ -748,7 +737,6 @@ __all__ = [
     "upload_normalized_to_airtable_job",
     "job_pipeline_job",
     "job_ingest_job",
-    "matchmaking_job",
     "upload_normalized_jobs_to_airtable_job",
     "sync_airtable_candidates_job",
     "sync_airtable_jobs_job",

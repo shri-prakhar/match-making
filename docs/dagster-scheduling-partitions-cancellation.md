@@ -264,6 +264,34 @@ sequenceDiagram
 
 The `DefaultRunLauncher` uses local subprocesses, so cancellation sends OS signals (`SIGINT` → `SIGKILL`). Each subprocess has a **termination thread** that monitors a shared event and triggers cleanup.
 
+**Long-running async steps (e.g. OpenRouter LLM):** If a step blocks inside `asyncio.run(openrouter_call)` for a long time, the main thread may not process the termination signal until the call returns, so the run can stay in CANCELING. Assets that do long LLM/API work use `run_with_interrupt_check(context, coro)` from `talent_matching.utils.dagster_async`: it runs the coroutine alongside a task that polls run status and raises when the run is CANCELING, so the step exits promptly and the run transitions to CANCELED.
+
+#### Where run time is spent (normalized_candidates)
+
+For a run that was cancelled while in `normalized_candidates`, the logs look like:
+
+| Time (log)       | Event | Code path |
+|------------------|-------|-----------|
+| 11:12:08         | Started process for run | Daemon / run launcher |
+| 11:12:08         | Started execution for "__ASSET_JOB" | Executor |
+| 11:12:08–09      | Executing steps: normalized_candidates, candidate_vectors | `talent_matching/jobs` (asset job) |
+| 11:12:09         | Launching subprocess for "normalized_candidates" | Multiprocess executor |
+| 11:12:10–11      | Executing step in subprocess; init resources [openrouter, postgres_io] | `talent_matching/assets/candidates.py` → resource init |
+| 11:12:11         | Loaded input "raw_candidates" using input manager "postgres_io" | `postgres_io.load_input` |
+| 11:12:11         | **Normalizing candidate rec… via OpenRouter API (sources: airtable)** | `normalized_candidates()` just before `asyncio.run(run_with_interrupt_check(..., normalize_cv(...)))` |
+| 11:12:11 → 11:17 | *No further step logs until cancel* | **Blocked here** |
+| 11:17:13         | Sending run termination request | Daemon (run monitor or user/API) |
+
+So the run was blocked for **~5 minutes** inside the OpenRouter call. The exact call chain:
+
+1. **Asset:** `normalized_candidates()` in `talent_matching/assets/candidates.py` builds `cv_text_airtable` / `cv_text_pdf`, then calls `asyncio.run(run_with_interrupt_check(context, normalize_cv(...)))`.
+2. **LLM op:** `normalize_cv()` in `talent_matching/llm/operations/normalize_cv.py` builds `user_content` via `_build_cv_content()`, then `await openrouter.complete(messages=[system, user], model=..., response_format={"type": "json_object"}, temperature=0.0)`.
+3. **HTTP:** `OpenRouterResource.complete()` in `talent_matching/resources/openrouter.py` does a single `await client.post("https://openrouter.ai/api/v1/chat/completions", json=request_body, timeout=120.0)`.
+
+**Where the time went:** Almost all of the ~5 minutes was spent in that **single `client.post()`** to OpenRouter (chat completions). The request body is large (long system prompt in `normalize_cv.SYSTEM_PROMPT` plus full CV text), and the response is a large JSON (skills, experience, narratives, etc.). So the bottleneck is **OpenRouter’s LLM latency** (model + network + output size). The step does not proceed until the full response is received; then it does `response.json()`, `_log_cost`, `await _store_cost_record(...)`, and returns. Cost logging and DB insert are fast; they do not explain the 5‑minute gap.
+
+**Note:** `timeout=120.0` is set on the POST. If the API regularly takes >2 minutes, the request would normally raise a timeout; a 5‑minute wait before cancel can occur if the run was terminated by run monitoring (e.g. `max_runtime_seconds`) before the HTTP timeout fired, or if the server/OpenRouter behavior differs (e.g. slow streaming or keep-alive).
+
 ### Retry policies
 
 API-heavy jobs use exponential backoff retries:

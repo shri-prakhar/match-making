@@ -27,7 +27,6 @@ from talent_matching.jobs import (
     candidate_vectors_job,
     job_ingest_job,
     job_pipeline_job,
-    matchmaking_job,
     sample_candidates_job,
     skill_normalization_job,
     skill_normalization_schedule,
@@ -142,7 +141,6 @@ all_jobs = [
     upload_normalized_to_airtable_job,
     job_pipeline_job,
     job_ingest_job,
-    matchmaking_job,
     upload_normalized_jobs_to_airtable_job,
     # Ops jobs (non-partitioned)
     sync_airtable_candidates_job,

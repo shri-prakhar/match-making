@@ -32,7 +32,10 @@ import httpx
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from talent_matching.utils.airtable_mapper import AIRTABLE_JOBS_WRITEBACK_FIELDS
+from talent_matching.utils.airtable_mapper import (
+    AIRTABLE_JOBS_WRITEBACK_FIELDS,
+    SMART_IDEAL_CANDIDATE_PROFILE_FIELD,
+)
 
 load_dotenv()
 
@@ -111,6 +114,9 @@ JOB_FIELD_SPECS: dict[str, dict] = {
 
 # The Start Matchmaking checkbox (not part of (N) fields but needed for the feedback loop)
 START_MATCHMAKING_SPEC = {"type": "checkbox", "options": {"icon": "check", "color": "yellowBright"}}
+
+# SMART IDEAL CANDIDATE PROFILE: filled by airtable_job_sync from normalized narrative prose
+SMART_IDEAL_CANDIDATE_PROFILE_SPEC = {"type": "multilineText"}
 
 BACKUP_DIR = os.path.join(os.path.dirname(__file__), "airtable_backups")
 
@@ -250,6 +256,10 @@ def main() -> None:
     # Start Matchmaking checkbox
     if "Start Matchmaking" not in existing:
         to_create.append(("Start Matchmaking", START_MATCHMAKING_SPEC))
+
+    # SMART IDEAL CANDIDATE PROFILE (filled from normalized job narratives)
+    if SMART_IDEAL_CANDIDATE_PROFILE_FIELD not in existing:
+        to_create.append((SMART_IDEAL_CANDIDATE_PROFILE_FIELD, SMART_IDEAL_CANDIDATE_PROFILE_SPEC))
 
     if not to_create:
         print("All columns already exist. Nothing to do.")

@@ -4,6 +4,7 @@ This resource is a thin HTTP client for OpenRouter API. It handles:
 - Authentication
 - Request formatting
 - Cost tracking (stored in PostgreSQL llm_costs table)
+- Timeout and retry (configurable) for slow or transient failures
 
 LLM operations (prompts and parsing) are in talent_matching.llm.operations.
 """
@@ -20,6 +21,9 @@ from pydantic import Field, PrivateAttr
 
 from talent_matching.db import get_session
 from talent_matching.models.llm_costs import LLMCost
+
+# HTTP status codes that trigger a retry (rate limit, gateway/upstream errors)
+_OPENROUTER_RETRYABLE_STATUS_CODES = (429, 502, 503, 504)
 
 
 @dataclass
@@ -102,6 +106,18 @@ class OpenRouterResource(ConfigurableResource):
         default="Talent Matching Pipeline",
         description="Application name for OpenRouter analytics",
     )
+    request_timeout_seconds: float = Field(
+        default=120.0,
+        description="HTTP request timeout per attempt (seconds). Long CVs can need 60–120s.",
+    )
+    max_retries: int = Field(
+        default=3,
+        description="Max retries on timeout or transient errors (429, 5xx). Total attempts = 1 + max_retries.",
+    )
+    retry_base_delay_seconds: float = Field(
+        default=2.0,
+        description="Base delay in seconds for exponential backoff between retries (2, 4, 8, ...).",
+    )
     # Internal state (not configurable, uses Pydantic PrivateAttr)
     _context: LLMContext = PrivateAttr(default_factory=LLMContext)
     _run_costs: RunCostAccumulator = PrivateAttr(default_factory=RunCostAccumulator)
@@ -127,6 +143,47 @@ class OpenRouterResource(ConfigurableResource):
             partition_key=partition_key,
             code_version=code_version,
         )
+
+    async def _post_with_retry(
+        self,
+        url: str,
+        headers: dict[str, str],
+        json_body: dict[str, Any],
+    ) -> httpx.Response:
+        """POST with timeout and exponential-backoff retry on timeout or 429/5xx."""
+        last_error: BaseException | None = None
+        for attempt in range(self.max_retries + 1):
+            if attempt > 0:
+                delay = self.retry_base_delay_seconds * (2 ** (attempt - 1))
+                get_dagster_logger().warning(
+                    f"OpenRouter retry {attempt}/{self.max_retries} after {delay:.1f}s: {last_error}"
+                )
+                await asyncio.sleep(delay)
+            async with httpx.AsyncClient() as client:
+                try:
+                    response = await client.post(
+                        url,
+                        headers=headers,
+                        json=json_body,
+                        timeout=self.request_timeout_seconds,
+                    )
+                    if response.is_success:
+                        return response
+                    if response.status_code in _OPENROUTER_RETRYABLE_STATUS_CODES:
+                        last_error = httpx.HTTPStatusError(
+                            f"OpenRouter {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
+                        continue
+                    response.raise_for_status()
+                    return response
+                except httpx.TimeoutException as e:
+                    last_error = e
+                    continue
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("retry loop ended without response or error")
 
     async def _store_cost_record(
         self,
@@ -235,20 +292,18 @@ class OpenRouterResource(ConfigurableResource):
         if plugins:
             request_body["plugins"] = plugins
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": self.site_url,
-                    "X-Title": self.app_name,
-                },
-                json=request_body,
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            data = response.json()
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": self.site_url,
+            "X-Title": self.app_name,
+        }
+        response = await self._post_with_retry(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json_body=request_body,
+        )
+        data = response.json()
 
         # Extract usage from response (always included by OpenRouter)
         usage = data.get("usage", {})
@@ -298,20 +353,18 @@ class OpenRouterResource(ConfigurableResource):
             "input": input,
         }
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/embeddings",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": self.site_url,
-                    "X-Title": self.app_name,
-                },
-                json=request_body,
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            data = response.json()
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": self.site_url,
+            "X-Title": self.app_name,
+        }
+        response = await self._post_with_retry(
+            "https://openrouter.ai/api/v1/embeddings",
+            headers=headers,
+            json_body=request_body,
+        )
+        data = response.json()
 
         # Extract usage from response
         usage = data.get("usage", {})
