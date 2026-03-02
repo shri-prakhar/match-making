@@ -34,7 +34,6 @@ from talent_matching.resources.matchmaking import MatchmakingResource  # noqa: E
 from talent_matching.resources.openrouter import OpenRouterResource  # noqa: E402
 from talent_matching.sensors.ats_matchmaking_sensor import (  # noqa: E402
     _ingest_raw_job,
-    _map_ats_record_to_raw_job,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -55,7 +54,12 @@ def fetch_ats_record(record_id: str) -> dict:
 
 
 def ingest_raw_job(ats_record: dict) -> dict:
-    """Ingest raw job data to Postgres from ATS record, return mapped fields."""
+    """Ingest raw job data to Postgres from ATS record, return mapped fields.
+
+    The returned dict includes job_description resolved from Notion when the
+    ATS record has a Job Description Link and no Job Description Text, so the
+    LLM normalization step receives the same content that was stored.
+    """
     from talent_matching.resources.notion import NotionResource
 
     notion = NotionResource(api_key=os.getenv("NOTION_API_KEY", ""))
@@ -63,7 +67,8 @@ def ingest_raw_job(ats_record: dict) -> dict:
     if not result:
         print("  FAILED: Could not ingest raw job (no description?)")
         sys.exit(1)
-    return _map_ats_record_to_raw_job(ats_record)
+    _record_id, mapped = result
+    return mapped
 
 
 def run_normalize(

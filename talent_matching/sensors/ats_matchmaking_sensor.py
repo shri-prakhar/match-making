@@ -92,8 +92,14 @@ def _map_ats_record_to_raw_job(record: dict) -> dict:
     }
 
 
-def _ingest_raw_job(record: dict, notion_resource: object | None, log: object) -> str | None:
-    """Write a RawJob to Postgres from an ATS record. Returns the record_id or None on failure."""
+def _ingest_raw_job(
+    record: dict, notion_resource: object | None, log: object
+) -> tuple[str, dict] | None:
+    """Write a RawJob to Postgres from an ATS record.
+
+    Returns (record_id, mapped) with mapped containing the final job_description
+    (from Notion if link present and Airtable description empty). Returns None on failure.
+    """
     mapped = _map_ats_record_to_raw_job(record)
     record_id = mapped["airtable_record_id"]
     if not record_id:
@@ -155,7 +161,7 @@ def _ingest_raw_job(record: dict, notion_resource: object | None, log: object) -
         f"Ingested ATS raw job {record_id}: "
         f"{mapped.get('job_title', 'No title')} (desc: {len(mapped['job_description'])} chars)"
     )
-    return record_id
+    return (record_id, mapped)
 
 
 @sensor(
@@ -213,8 +219,8 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
         title = (record.get("fields", {}).get("Open Position (Job Title)") or "Untitled")[:80]
         context.log.info(f"Processing ATS job: {record_id} — {title}")
 
-        ingested_id = _ingest_raw_job(record, notion, context.log)
-        if not ingested_id:
+        result = _ingest_raw_job(record, notion, context.log)
+        if not result:
             continue
 
         if record_id not in existing_partitions:
