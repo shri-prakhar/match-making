@@ -1,0 +1,18 @@
+---
+description: How to load .env for scripts and commands
+alwaysApply: true
+---
+
+# .env Sourcing
+
+When running scripts or commands that need env vars from `.env`:
+
+- **Source `.env` into the shell** — do not read `.env` from within the script.
+- Use: `set -a && source .env && set +a && <command>`
+  - `set -a` exports all variables set by `source .env`
+  - `set +a` turns off auto-export afterward
+
+Example:
+```bash
+set -a && source .env && set +a && poetry run python scripts/create_airtable_matches_table.py
+```
