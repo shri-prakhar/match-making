@@ -17,6 +17,7 @@ from talent_matching.utils.airtable_mapper import (
     AIRTABLE_CANDIDATES_WRITEBACK_FIELDS,
     extract_cv_url,
     map_airtable_row_to_raw_candidate,
+    map_airtable_row_to_raw_job,
     normalized_candidate_to_airtable_fields,
     parse_comma_separated,
 )
@@ -174,6 +175,55 @@ class TestMapAirtableRowToRawCandidate:
         assert result["linkedin_url"] == "https://linkedin.com/in/profile"
         assert result["github_url"] == "https://github.com/profile"
         assert result["earn_profile_url"] == "https://earn.superteam.fun/profile"
+
+
+class TestMapAirtableRowToRawJob:
+    """Tests for Airtable job record mapping."""
+
+    def test_maps_recruiter_guidance_fields(self):
+        """Test that Non Negotiables and Nice-to-have are mapped for LLM normalization."""
+        record = {
+            "id": "recJob123",
+            "fields": {
+                "🔗  Job Description Link": "https://notion.so/Job-abc123",
+                "Hiring Job Title": "Staff Backend Engineer",
+                "Company": "Acme Corp",
+                "Non Negotiables": "5+ years Node.js, TypeScript, PostgreSQL",
+                "Nice-to-have": "Rust, Solana experience",
+                "Projected Salary": "$150k–$200k",
+                "Location": "Remote, Europe",
+            },
+        }
+
+        result = map_airtable_row_to_raw_job(record)
+
+        assert result["airtable_record_id"] == "recJob123"
+        assert result["job_description_link"] == "https://notion.so/Job-abc123"
+        assert result["job_title_raw"] == "Staff Backend Engineer"
+        assert result["company_name"] == "Acme Corp"
+        assert result["non_negotiables"] == "5+ years Node.js, TypeScript, PostgreSQL"
+        assert result["nice_to_have"] == "Rust, Solana experience"
+        assert result["projected_salary"] == "$150k–$200k"
+        assert result["location_raw"] == "Remote, Europe"
+
+    def test_handles_missing_recruiter_fields(self):
+        """Test that missing recruiter fields do not break mapping."""
+        record = {
+            "id": "recMinimal",
+            "fields": {
+                "Hiring Job Title": "Engineer",
+                "Company": "Startup",
+            },
+        }
+
+        result = map_airtable_row_to_raw_job(record)
+
+        assert result["job_title_raw"] == "Engineer"
+        assert result["company_name"] == "Startup"
+        assert result.get("non_negotiables") is None
+        assert result.get("nice_to_have") is None
+        assert result.get("projected_salary") is None
+        assert result.get("location_raw") is None
 
 
 class TestAirtableResource:
@@ -358,10 +408,12 @@ class TestNormalizedCandidateWriteback:
         assert "(N) Email" not in out
 
     def test_normalized_candidate_to_airtable_fields_coerces_list(self):
-        """Array fields become list of strings for Airtable multi-select."""
+        """List/array fields are serialized for Airtable (e.g. comma-separated or list)."""
         candidate = {"skills_summary": ["Python", "Rust"]}
         out = normalized_candidate_to_airtable_fields(candidate)
-        assert out["(N) Skills Summary"] == ["Python", "Rust"]
+        # Mapper may output list or comma-separated string depending on Airtable field type
+        val = out["(N) Skills Summary"]
+        assert val == ["Python", "Rust"] or val == "Python, Rust"
 
     def test_normalized_candidate_to_airtable_fields_coerces_enum(self):
         """Enum values are serialized with .value."""

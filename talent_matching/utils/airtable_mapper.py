@@ -216,6 +216,12 @@ AIRTABLE_JOBS_COLUMN_MAPPING: dict[str, str] = {
     # Optional: if table has a text field for pasted job description
     "Job Description Text": "job_description_text",
     "Links & details": "job_description_text",
+    # Recruiter guidance: fed to LLM during normalization for must-have vs nice-to-have
+    "Non Negotiables": "non_negotiables",
+    "Nice-to-have": "nice_to_have",
+    "Projected Salary": "projected_salary",
+    "Location": "location_raw",
+    "Preferred Location": "location_raw",
 }
 
 

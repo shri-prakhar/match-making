@@ -109,11 +109,14 @@ def raw_jobs(
         "job_description": job_description or "(No description provided)",
         "company_website_url": airtable_jobs.get("company_website_url"),
         "experience_level_raw": None,
-        "location_raw": None,
+        "location_raw": airtable_jobs.get("location_raw"),
         "work_setup_raw": None,
         "status_raw": None,
         "job_category_raw": airtable_jobs.get("job_title_raw"),
         "x_url": airtable_jobs.get("x_url"),
+        "non_negotiables": airtable_jobs.get("non_negotiables"),
+        "nice_to_have": airtable_jobs.get("nice_to_have"),
+        "projected_salary": airtable_jobs.get("projected_salary"),
     }
     context.log.info(f"Prepared raw job {record_id} (description length: {len(job_description)})")
     return payload

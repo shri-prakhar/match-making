@@ -371,6 +371,10 @@ class AirtableJobsResource(ConfigurableResource):
             "company_name",
             "x_url",
             "company_website_url",
+            "non_negotiables",
+            "nice_to_have",
+            "location_raw",
+            "projected_salary",
         ]
         content = {k: mapped_record.get(k) for k in content_fields}
         content_str = str(sorted(content.items()))
