@@ -90,6 +90,7 @@ dev_resources = {
         api_key=EnvVar("AIRTABLE_API_KEY"),
         write_api_key=os.getenv("AIRTABLE_WRITE_TOKEN") or None,
         matches_table_id=os.getenv("AIRTABLE_MATCHES_TABLE_ID") or None,
+        matches_view_url=os.getenv("AIRTABLE_MATCHES_VIEW_URL") or None,
     ),
     # Notion API for fetching job description page content (optional key; tries without if unset)
     "notion": NotionResource(api_key=os.getenv("NOTION_API_KEY", "")),

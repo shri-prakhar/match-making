@@ -463,6 +463,11 @@ class AirtableATSResource(ConfigurableResource):
         default=None,
         description="Optional Matches table ID for storing score, pros, cons per candidate-job.",
     )
+    matches_view_url: str | None = Field(
+        default=None,
+        description="Base URL of shared Matches table view (e.g. https://airtable.com/shrXXX). "
+        "Pipeline appends ?filter_Job=<record_id> so each job links to its filtered matches.",
+    )
 
     ATS_JOB_FIELDS: ClassVar[list[str]] = [
         "Open Position (Job Title)",

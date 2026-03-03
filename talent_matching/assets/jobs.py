@@ -998,6 +998,11 @@ def upload_matches_to_ats(
         fields[ATS_JOB_STATUS_FIELD] = ATS_MATCHMAKING_DONE_STATUS
     if linked_record_ids:
         fields[ATS_AI_PROPOSED_FIELD] = linked_record_ids
+    if ats.matches_view_url:
+        base = ats.matches_view_url.rstrip("?")
+        sep = "&" if "?" in base else "?"
+        # filterHasAnyOf_Job for linked record; value = ATS record ID
+        fields["View Matches"] = f"{base}{sep}filterHasAnyOf_Job={record_id}"
 
     if fields:
         ats.update_record(record_id, fields)
