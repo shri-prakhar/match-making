@@ -5,8 +5,9 @@ This module defines the asset graph for processing jobs and generating matches:
 2. raw_jobs: Resolved job description text (Notion fetch + Airtable mapping), stored in PostgreSQL
 3. normalized_jobs: LLM-normalized job requirements + narratives
 4. job_vectors: Semantic embeddings (experience, domain, personality, impact, technical, role_description)
-5. matches: Computed candidate-job matches (vector raw 0.4 role + 0.35 domain + 0.25 culture; skill fit 80% rating, 20% semantic when a skill matches; top 15)
-6. upload_matches_to_ats: Write matched candidates as linked chips to ATS and set Job Status to Matchmaking Done
+5. matches: Computed candidate-job matches (vector raw 0.4 role + 0.35 domain + 0.25 culture; skill fit 80% rating, 20% semantic when a skill matches; top 30)
+6. llm_refined_shortlist: LLM scores each of 30 candidates (1-10, pros, cons), selects final max 15 who fulfill all must-haves
+7. upload_matches_to_ats: Write matched candidates as linked chips to ATS and set Job Status to Matchmaking Done
 """
 
 import asyncio
@@ -42,6 +43,8 @@ from talent_matching.matchmaking.scoring import (
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_job_to_airtable_fields
 from talent_matching.utils.dagster_async import run_with_interrupt_check
+from talent_matching.llm.operations.score_candidate_job_fit import score_candidate_job_fit
+from talent_matching.llm.operations.select_final_shortlist import select_final_shortlist
 
 # Dynamic partition definition for jobs (one partition per Airtable job record ID)
 job_partitions = DynamicPartitionsDefinition(name="jobs")
@@ -345,7 +348,7 @@ def airtable_job_sync(
 ROLE_WEIGHT = 0.4
 DOMAIN_WEIGHT = 0.35
 CULTURE_WEIGHT = 0.25
-TOP_N_PER_JOB = 15
+TOP_N_PER_JOB = 30
 ALGORITHM_VERSION = "notion_v3"
 SKILL_MIN_THRESHOLD = 0.30
 
@@ -395,13 +398,13 @@ def matches(
     normalized_jobs: Any,
     job_vectors: Any,
 ) -> list[dict[str, Any]]:
-    """Compute matches: vector_score (role/domain/culture) + skill penalty, top 20 per job.
+    """Compute matches: vector_score (role/domain/culture) + skill penalty, top 30 per job.
 
     Optional (deferred): pre-filter to candidates with candidate_role_fitness.fitness_score >= 60
     for a role matching the job; see plan matchmaking_scoring_and_shortlist.
     """
     context.log.info(
-        f"Computing matches for job partition {context.partition_key} (vector + skill penalty, top 20 per job)"
+        f"Computing matches for job partition {context.partition_key} (vector + skill penalty, top 30 per job)"
     )
 
     # AllPartitionMapping yields dict[partition_key, value]; value per partition is what IO manager returned (dict or list)
@@ -764,6 +767,158 @@ def matches(
     return match_results
 
 
+def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
+    """Flatten normalized_candidates from AllPartitionMapping to list of dicts."""
+    if x is None:
+        return []
+    if isinstance(x, dict):
+        out = []
+        for v in x.values():
+            if isinstance(v, dict) and v:
+                out.append(v)
+            elif isinstance(v, list):
+                out.extend(i for i in v if isinstance(i, dict))
+        return out
+    if isinstance(x, list):
+        return [item for item in x if isinstance(item, dict)]
+    return [x] if isinstance(x, dict) else []
+
+
+@asset(
+    partitions_def=job_partitions,
+    ins={
+        "matches": AssetIn(),
+        "normalized_candidates": AssetIn(
+            key=["normalized_candidates"],
+            partition_mapping=AllPartitionMapping(),
+        ),
+        "normalized_jobs": AssetIn(),
+        "raw_jobs": AssetIn(),
+    },
+    description="LLM-refined shortlist: score 30 candidates (1-10, pros, cons), select max 15 who fulfill all must-haves",
+    group_name="matching",
+    io_manager_key="postgres_io",
+    required_resource_keys={"openrouter", "matchmaking"},
+    code_version="1.0.0",
+    metadata={"table": "matches"},
+    op_tags={"dagster/concurrency_key": "openrouter_api"},
+)
+def llm_refined_shortlist(
+    context: AssetExecutionContext,
+    matches: list[dict[str, Any]],
+    normalized_candidates: Any,
+    normalized_jobs: Any,
+    raw_jobs: Any,
+) -> list[dict[str, Any]]:
+    """Score each of 30 matches with advanced AI, select final max 15 who fulfill all must-haves."""
+    if not matches:
+        context.log.info("No matches to refine; skipping")
+        return []
+
+    candidates_list = _to_candidate_list_for_shortlist(normalized_candidates)
+    cand_by_id: dict[str, dict[str, Any]] = {
+        str(c["id"]): c for c in candidates_list if c.get("id")
+    }
+
+    job = normalized_jobs if isinstance(normalized_jobs, dict) else (normalized_jobs or [{}])[0]
+    raw_job = raw_jobs if isinstance(raw_jobs, dict) else (raw_jobs or [{}])[0]
+    job_id_norm = str(job.get("id", ""))
+    job_title = job.get("job_title") or job.get("job_category") or "Unknown"
+    job_description = (raw_job.get("job_description") or "").strip()
+
+    req_skills = context.resources.matchmaking.get_job_required_skills([job_id_norm])
+    all_reqs = req_skills.get(job_id_norm, [])
+    must_haves = [r for r in all_reqs if r.get("requirement_type") == "must_have"]
+
+    openrouter = context.resources.openrouter
+    openrouter.set_context(
+        run_id=context.run_id,
+        asset_key="llm_refined_shortlist",
+        partition_key=context.partition_key,
+        code_version="1.0.0",
+    )
+
+    scored: list[dict[str, Any]] = []
+    for i, m in enumerate(matches):
+        cand_id = str(m.get("candidate_id", ""))
+        candidate = cand_by_id.get(cand_id)
+        if not candidate:
+            context.log.warning(f"Candidate {cand_id} not found in normalized_candidates; skipping")
+            continue
+        cand_for_llm: dict[str, Any] = candidate
+
+        async def _score_one() -> dict[str, Any]:
+            return await score_candidate_job_fit(
+                openrouter,
+                cand_for_llm,
+                job_description,
+                job,
+                must_haves,
+            )
+
+        result = asyncio.run(run_with_interrupt_check(context, _score_one()))
+        scored.append(
+            {
+                "candidate_id": cand_id,
+                "candidate_name": candidate.get("full_name") or "Unknown",
+                "fit_score": result.get("fit_score", 0),
+                "pros": result.get("pros") or [],
+                "cons": result.get("cons") or [],
+                "fulfills_all_must_haves": result.get("fulfills_all_must_haves", False),
+                "_match": m,
+                "_result": result,
+            }
+        )
+        context.log.info(
+            f"Scored {i + 1}/{len(matches)}: {cand_for_llm.get('full_name', '?')} "
+            f"fit={result.get('fit_score')} fulfills_must_haves={result.get('fulfills_all_must_haves')}"
+        )
+
+    async def _select() -> dict[str, Any]:
+        return await select_final_shortlist(
+            openrouter,
+            [
+                {
+                    "candidate_id": s["candidate_id"],
+                    "candidate_name": s["candidate_name"],
+                    "fit_score": s["fit_score"],
+                    "pros": s["pros"],
+                    "cons": s["cons"],
+                    "fulfills_all_must_haves": s["fulfills_all_must_haves"],
+                }
+                for s in scored
+            ],
+            job_title,
+        )
+
+    selection = asyncio.run(run_with_interrupt_check(context, _select()))
+    selected_ids = {str(s) for s in selection.get("selected_candidate_ids", [])}
+
+    scored_by_id = {s["candidate_id"]: s for s in scored}
+    final: list[dict[str, Any]] = []
+    for rank, cand_id in enumerate(selection.get("selected_candidate_ids", []), start=1):
+        s = scored_by_id.get(str(cand_id))
+        if not s:
+            continue
+        m = s["_match"]
+        r = s["_result"]
+        final.append(
+            {
+                **m,
+                "rank": rank,
+                "llm_fit_score": r.get("fit_score"),
+                "strengths": r.get("pros") or None,
+                "red_flags": r.get("cons") or None,
+            }
+        )
+
+    context.log.info(
+        f"Refined shortlist: {len(final)} candidates (from {len(matches)} scored, "
+        f"{len(selected_ids)} selected by LLM)"
+    )
+    return final
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ATS UPLOAD: push match results back to Airtable ATS table
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -775,7 +930,7 @@ ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done "  # trailing space matches Airt
 
 @asset(
     partitions_def=job_partitions,
-    ins={"matches": AssetIn()},
+    ins={"llm_refined_shortlist": AssetIn()},
     description="Upload top match results to ATS table as linked candidate chips and set Job Status to Matchmaking Done",
     group_name="matching",
     required_resource_keys={"airtable_ats"},
@@ -783,11 +938,12 @@ ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done "  # trailing space matches Airt
 )
 def upload_matches_to_ats(
     context: AssetExecutionContext,
-    matches: list[dict[str, Any]],
+    llm_refined_shortlist: list[dict[str, Any]],
 ) -> None:
     """Write matched candidates as linked records on the ATS row and flip status."""
     from talent_matching.models.candidates import NormalizedCandidate
 
+    matches = llm_refined_shortlist
     record_id = context.partition_key
     ats = context.resources.airtable_ats
     context.log.info(f"Uploading {len(matches)} matches to ATS for job {record_id}")
@@ -845,6 +1001,21 @@ def upload_matches_to_ats(
 
     if fields:
         ats.update_record(record_id, fields)
+
+    if ats.matches_table_id:
+        matches_for_table = [
+            {
+                "candidate_airtable_id": norm_to_airtable.get(m["candidate_id"]),
+                "score": m.get("llm_fit_score"),
+                "pros": m.get("strengths"),
+                "cons": m.get("red_flags"),
+                "rank": m.get("rank"),
+            }
+            for m in sorted_matches
+            if norm_to_airtable.get(m["candidate_id"])
+        ]
+        ats.replace_matches_for_job(record_id, matches_for_table)
+        context.log.info(f"Wrote {len(matches_for_table)} records to Matches table")
 
     status_msg = (
         f"set Job Status to '{ATS_MATCHMAKING_DONE_STATUS}'"

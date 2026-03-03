@@ -219,10 +219,15 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
         return None
 
     def _get_table_name(self, context: OutputContext | InputContext) -> str:
-        """Derive table name from asset key."""
+        """Derive table name from asset key. For load_input, use upstream asset key when loading."""
         asset_key = context.asset_key
+        if hasattr(context, "upstream_output") and context.upstream_output is not None:
+            asset_key = context.upstream_output.asset_key
         if asset_key:
-            return "_".join(asset_key.path)
+            table_from_path = "_".join(asset_key.path)
+            if "llm_refined_shortlist" in table_from_path:
+                return "matches"
+            return table_from_path
         return "unknown"
 
     def handle_output(self, context: OutputContext, obj: Any) -> None:
@@ -1168,6 +1173,9 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
                 "matching_skills": data.get("matching_skills"),
                 "missing_skills": data.get("missing_skills"),
                 "match_reasoning": data.get("match_reasoning"),
+                "red_flags": data.get("red_flags"),
+                "strengths": data.get("strengths"),
+                "llm_fit_score": data.get("llm_fit_score"),
                 "rank": data.get("rank"),
                 "algorithm_version": data.get("algorithm_version"),
             }
@@ -1190,6 +1198,9 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
                     "matching_skills": stmt.excluded.matching_skills,
                     "missing_skills": stmt.excluded.missing_skills,
                     "match_reasoning": stmt.excluded.match_reasoning,
+                    "red_flags": stmt.excluded.red_flags,
+                    "strengths": stmt.excluded.strengths,
+                    "llm_fit_score": stmt.excluded.llm_fit_score,
                     "rank": stmt.excluded.rank,
                     "algorithm_version": stmt.excluded.algorithm_version,
                 },

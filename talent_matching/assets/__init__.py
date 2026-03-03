@@ -17,6 +17,7 @@ from talent_matching.assets.candidates import (
 from talent_matching.assets.jobs import (
     airtable_job_sync,
     job_vectors,
+    llm_refined_shortlist,
     matches,
     normalized_jobs,
     raw_jobs,
@@ -45,4 +46,5 @@ __all__ = [
     "social_followers_aggregation",
     # Matching
     "matches",
+    "llm_refined_shortlist",
 ]

@@ -459,6 +459,10 @@ class AirtableATSResource(ConfigurableResource):
         default=None,
         description="Optional token with data.records:write scope for PATCH.",
     )
+    matches_table_id: str | None = Field(
+        default=None,
+        description="Optional Matches table ID for storing score, pros, cons per candidate-job.",
+    )
 
     ATS_JOB_FIELDS: ClassVar[list[str]] = [
         "Open Position (Job Title)",
@@ -590,3 +594,67 @@ class AirtableATSResource(ConfigurableResource):
             "job_category_raw": category_raw,
             "x_url": None,
         }
+
+    def replace_matches_for_job(
+        self,
+        job_ats_record_id: str,
+        matches: list[dict[str, Any]],
+    ) -> None:
+        """Replace match records for a job in the Matches table.
+
+        Deletes existing records where Job links to this ATS record, then creates
+        new records. Requires matches_table_id to be set.
+
+        Args:
+            job_ats_record_id: ATS record ID (the job row)
+            matches: List of dicts with candidate_airtable_id, score, pros, cons, rank
+        """
+        if not self.matches_table_id:
+            return
+        url = f"https://api.airtable.com/v0/{self.base_id}/{self.matches_table_id}"
+        headers = self._write_headers()
+
+        with httpx.Client(timeout=30.0) as client:
+            formula = f"FIND('{job_ats_record_id}', ARRAYJOIN({{Job}}))"
+            offset: str | None = None
+            to_delete: list[str] = []
+            while True:
+                params: list[tuple[str, str]] = [("filterByFormula", formula)]
+                if offset:
+                    params.append(("offset", offset))
+                response = client.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                data = response.json()
+                for rec in data.get("records", []):
+                    to_delete.append(rec["id"])
+                offset = data.get("offset")
+                if not offset:
+                    break
+
+            for rec_id in to_delete:
+                client.delete(f"{url}/{rec_id}", headers=headers).raise_for_status()
+
+            if not matches:
+                return
+
+            def _join(v: Any) -> str:
+                if v is None:
+                    return ""
+                if isinstance(v, list):
+                    return "\n".join(str(x) for x in v) if v else ""
+                return str(v)
+
+            records = [
+                {
+                    "fields": {
+                        "Job": [job_ats_record_id],
+                        "Candidate": [m["candidate_airtable_id"]],
+                        "Score": m.get("score"),
+                        "Pros": _join(m.get("pros")),
+                        "Cons": _join(m.get("cons")),
+                        "Rank": m.get("rank"),
+                    }
+                }
+                for m in matches
+            ]
+            client.post(url, headers=headers, json={"records": records}).raise_for_status()

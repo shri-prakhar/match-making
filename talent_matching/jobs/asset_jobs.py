@@ -16,6 +16,7 @@ from talent_matching.assets.jobs import (
     airtable_jobs,
     job_partitions,
     job_vectors,
+    llm_refined_shortlist,
     matches,
     normalized_jobs,
     raw_jobs,
@@ -127,12 +128,12 @@ upload_normalized_jobs_to_airtable_job = define_asset_job(
 ats_matchmaking_pipeline_job = define_asset_job(
     name="ats_matchmaking_pipeline",
     description=(
-        "Normalize a job, compute vectors, score matches, and upload results to ATS. "
+        "Normalize a job, compute vectors, score matches, LLM-refine shortlist, and upload to ATS. "
         "Triggered by ats_matchmaking_sensor after it ingests the raw job to Postgres. "
         "Writes top 15 candidates as linked chips to 'AI PROPOSTED CANDIDATES' and "
         "sets Job Status to 'Matchmaking Done'."
     ),
-    selection=[normalized_jobs, job_vectors, matches, upload_matches_to_ats],
+    selection=[normalized_jobs, job_vectors, matches, llm_refined_shortlist, upload_matches_to_ats],
     partitions_def=job_partitions,
     op_retry_policy=openrouter_retry_policy,
     tags={"dagster/concurrency_limit": "matchmaking"},

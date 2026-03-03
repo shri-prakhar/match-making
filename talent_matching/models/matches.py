@@ -76,6 +76,9 @@ class Match(Base):
     match_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     red_flags: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     strengths: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    llm_fit_score: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # 1-10 from LLM refinement stage
 
     # ═══════════════════════════════════════════════════════════════════
     # STATUS & WORKFLOW
