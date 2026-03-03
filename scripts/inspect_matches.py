@@ -11,6 +11,10 @@ Usage:
 
 Requires:
     - Matches already computed and stored (run matches asset for the job partition).
+
+To inspect matches on the REMOTE server (when using poetry run remote-ui):
+    POSTGRES_HOST=localhost POSTGRES_PORT=15432 python scripts/inspect_matches.py <partition_id>
+  (15432 is the tunnel to remote Postgres; without it you default to port 5432 = local DB.)
 """
 
 import os
@@ -29,9 +33,11 @@ CULTURE_WEIGHT = 0.25
 
 
 def get_connection():
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = int(os.environ.get("POSTGRES_PORT", 5432))
     return psycopg2.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", 5432)),
+        host=host,
+        port=port,
         user=os.environ["POSTGRES_USER"],
         password=os.environ["POSTGRES_PASSWORD"],
         dbname=os.environ["POSTGRES_DB"],
@@ -39,6 +45,9 @@ def get_connection():
 
 
 def inspect_matches(partition_id: str) -> None:
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = int(os.environ.get("POSTGRES_PORT", 5432))
+    print(f"  DB: {host}:{port} (remote tunnel = localhost:15432 when remote-ui is running)")
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -60,13 +69,14 @@ def inspect_matches(partition_id: str) -> None:
     job_title = (job.get("job_title") or "—")[:35]
     company = (job.get("company_name") or "—")[:25]
 
-    # Load matches for this job with candidate details
+    # Load matches for this job with candidate details (incl. LLM refinement fields)
     cur.execute(
         """SELECT m.rank, m.match_score,
                   m.role_similarity_score, m.domain_similarity_score, m.culture_similarity_score,
                   m.skills_match_score, m.compensation_match_score,
                   m.experience_match_score, m.location_match_score,
                   m.matching_skills, m.missing_skills,
+                  m.llm_fit_score, m.strengths, m.red_flags,
                   nc.id AS candidate_id, nc.full_name, nc.airtable_record_id AS candidate_partition_id
            FROM matches m
            JOIN normalized_candidates nc ON m.candidate_id = nc.id
@@ -135,6 +145,17 @@ def inspect_matches(partition_id: str) -> None:
         print(
             f"    Skills fit: {_fmt(skill_fit)}  Compensation: {_fmt(comp_score)}  Experience: {_fmt(exp_score)}  Location: {_fmt(loc_score)}"
         )
+        llm_score = r.get("llm_fit_score")
+        if llm_score is not None:
+            print(f"    LLM fit score: {llm_score}/10")
+        strengths = r.get("strengths")
+        if strengths:
+            s = ", ".join(strengths) if isinstance(strengths, list) else str(strengths)
+            print(f"    Pros: {s[:200]}{'...' if len(s) > 200 else ''}")
+        red_flags = r.get("red_flags")
+        if red_flags:
+            s = ", ".join(red_flags) if isinstance(red_flags, list) else str(red_flags)
+            print(f"    Cons: {s[:200]}{'...' if len(s) > 200 else ''}")
         print("    Seniority penalty: — (not stored)")
         if matching:
             print(f"    Matching skills: {', '.join(matching)}")
