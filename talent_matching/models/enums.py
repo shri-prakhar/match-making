@@ -43,6 +43,15 @@ class VerificationStatusEnum(str, enum.Enum):
     FRAUDULENT = "fraudulent"
 
 
+class SkillVerificationStatusEnum(str, enum.Enum):
+    """Per-skill GitHub verification status."""
+
+    VERIFIED = "verified"
+    UNVERIFIED = "unverified"
+    NO_EVIDENCE = "no_evidence"
+    SKIPPED = "skipped"
+
+
 class ReviewStatusEnum(str, enum.Enum):
     """Review status for skills and other entities."""
 

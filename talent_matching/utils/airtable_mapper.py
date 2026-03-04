@@ -53,6 +53,7 @@ NORMALIZED_CANDIDATE_SYNCABLE_FIELDS = [
     "prompt_version",
     "model_version",
     "confidence_score",
+    "skill_verification_score",
     "normalized_at",
 ]
 

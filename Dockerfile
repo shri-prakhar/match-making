@@ -15,7 +15,7 @@ RUN poetry install --only main --no-root --no-interaction
 FROM python:3.13-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 && \
+    apt-get install -y --no-install-recommends libpq5 git && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local /usr/local

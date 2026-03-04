@@ -21,7 +21,11 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from talent_matching.models.base import Base
-from talent_matching.models.enums import SeniorityEnum, VerificationStatusEnum
+from talent_matching.models.enums import (
+    SeniorityEnum,
+    SkillVerificationStatusEnum,
+    VerificationStatusEnum,
+)
 
 
 class NormalizedCandidate(Base):
@@ -135,6 +139,8 @@ class NormalizedCandidate(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Skill verification score (0-1) from GitHub profile checks
+    skill_verification_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Full LLM response stored for narratives/vectorization
     normalized_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
@@ -156,6 +162,9 @@ class NormalizedCandidate(Base):
     )
     github_metrics: Mapped["CandidateGithubMetrics | None"] = relationship(
         "CandidateGithubMetrics", back_populates="candidate", uselist=False
+    )
+    github_commit_history: Mapped["CandidateGithubCommitHistory | None"] = relationship(
+        "CandidateGithubCommitHistory", back_populates="candidate", uselist=False
     )
     twitter_metrics: Mapped["CandidateTwitterMetrics | None"] = relationship(
         "CandidateTwitterMetrics", back_populates="candidate", uselist=False
@@ -200,6 +209,14 @@ class CandidateSkill(Base):
     # Metadata
     rated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     rating_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # Skill verification (GitHub profile checks)
+    verification_status: Mapped[SkillVerificationStatusEnum | None] = mapped_column(
+        Enum(SkillVerificationStatusEnum, name="skill_verification_status_enum"),
+        nullable=True,
+    )
+    verification_evidence: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     candidate: Mapped["NormalizedCandidate"] = relationship(
@@ -394,6 +411,33 @@ class CandidateProject(Base):
     # Relationships
     candidate: Mapped["NormalizedCandidate"] = relationship(
         "NormalizedCandidate", back_populates="projects"
+    )
+
+
+class CandidateGithubCommitHistory(Base):
+    """Full commit history from blobless git clone for skill verification."""
+
+    __tablename__ = "candidate_github_commit_history"
+    __table_args__ = (UniqueConstraint("candidate_id", name="uq_candidate_github_commit_history"),)
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+
+    candidate_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    github_username: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # JSON: {repos: [{name, full_name, url, commits: [{sha, message, author, date}]}]}
+    commit_history: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    candidate: Mapped["NormalizedCandidate"] = relationship(
+        "NormalizedCandidate", back_populates="github_commit_history"
     )
 
 

@@ -27,6 +27,11 @@ from dagster import (
 from talent_matching.db import get_session
 from talent_matching.llm import PDFEngine, embed_text, extract_pdf_from_url, normalize_cv
 from talent_matching.models.enums import PROFICIENCY_LEVELS
+from talent_matching.skills.github_verification import (
+    clone_and_extract_commits,
+    fetch_repo_metadata,
+    verify_skills_llm,
+)
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_candidate_to_airtable_fields
 from talent_matching.utils.dagster_async import run_with_interrupt_check
@@ -65,7 +70,7 @@ def airtable_candidates(context: AssetExecutionContext) -> Output[dict[str, Any]
     data_version = candidate.pop("_data_version", None)
 
     context.log.info(
-        f"Fetched candidate: {candidate.get('full_name', 'Unknown')} " f"(version: {data_version})"
+        f"Fetched candidate: {candidate.get('full_name', 'Unknown')} (version: {data_version})"
     )
 
     return Output(
@@ -317,7 +322,7 @@ def normalized_candidates(
     if has_pdf:
         sources.append("pdf")
     context.log.info(
-        f"Normalizing candidate {record_id} via OpenRouter API " f"(sources: {', '.join(sources)})"
+        f"Normalizing candidate {record_id} via OpenRouter API (sources: {', '.join(sources)})"
     )
 
     # Fail fast if API key is not configured
@@ -561,6 +566,243 @@ ROLE_FITNESS_ALGORITHM_VERSION = "notion_v1"
 @asset(
     partitions_def=candidate_partitions,
     ins={"normalized_candidates": AssetIn()},
+    description="Full commit history from blobless git clone for skill verification",
+    group_name="candidates",
+    io_manager_key="postgres_io",
+    required_resource_keys={"github"},
+    code_version="1.0.0",
+    op_tags={"dagster/concurrency_key": "github_api"},
+    metadata={"table": "candidate_github_commit_history"},
+)
+def candidate_github_commit_history(
+    context: AssetExecutionContext,
+    normalized_candidates: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Clone repos with blobless clone and extract full commit history.
+
+    Uses git clone --filter=blob:none --bare; no REST rate limits.
+    Runs in parallel to candidate_vectors, candidate_role_fitness.
+    """
+    record_id = context.partition_key
+    github_handle = normalized_candidates.get("github_handle")
+    candidate_id = normalized_candidates.get("id")  # from loaded NormalizedCandidate
+
+    if not github_handle or not str(github_handle).strip():
+        context.log.info(f"No github_handle for {record_id}; skipping commit history")
+        return None
+
+    if not candidate_id:
+        context.log.warning(f"No normalized candidate id for partition {record_id}")
+        return None
+
+    github = context.resources.github
+    context.log.info(f"Extracting commit history for {github_handle} ({record_id})")
+
+    result = clone_and_extract_commits(username=github_handle, github=github, max_repos=15)
+
+    total_commits = sum(len(r.get("commits", [])) for r in result.get("repos", []))
+    context.add_output_metadata(
+        {
+            "repos_cloned": len(result.get("repos", [])),
+            "total_commits": total_commits,
+        }
+    )
+
+    return {
+        "candidate_id": str(candidate_id),
+        "airtable_record_id": record_id,
+        "github_username": github_handle,
+        "commit_history": result,
+    }
+
+
+@asset(
+    partitions_def=candidate_partitions,
+    ins={
+        "normalized_candidates": AssetIn(),
+        "candidate_github_commit_history": AssetIn(),
+    },
+    description="Verify each skill against GitHub profile via single LLM call",
+    group_name="candidates",
+    io_manager_key="postgres_io",
+    required_resource_keys={"github", "openrouter"},
+    code_version="1.0.0",
+    op_tags={"dagster/concurrency_key": "openrouter_api"},
+    metadata={"table": "candidate_skill_verification"},
+)
+def candidate_skill_verification(
+    context: AssetExecutionContext,
+    normalized_candidates: dict[str, Any],
+    candidate_github_commit_history: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Verify claimed skills against GitHub data (commit history + API metadata + LLM)."""
+    from datetime import datetime
+
+    from talent_matching.models.enums import SkillVerificationStatusEnum
+    from talent_matching.utils.dagster_async import run_with_interrupt_check
+
+    record_id = context.partition_key
+    candidate_id = normalized_candidates.get("id")
+    github_handle = normalized_candidates.get("github_handle")
+
+    if not candidate_id:
+        context.log.warning(f"No normalized candidate id for partition {record_id}")
+        return {
+            "candidate_id": None,
+            "airtable_record_id": record_id,
+            "skipped": True,
+            "skill_verification_score": None,
+            "per_skill_results": [],
+        }
+
+    if not github_handle or not str(github_handle).strip():
+        context.log.info(f"No github_handle for {record_id}; skipping skill verification")
+        return {
+            "candidate_id": str(candidate_id),
+            "airtable_record_id": record_id,
+            "skipped": True,
+            "skill_verification_score": None,
+            "per_skill_results": [],
+        }
+
+    if not candidate_github_commit_history:
+        context.log.info(f"No commit history for {record_id}; skipping skill verification")
+        return {
+            "candidate_id": str(candidate_id),
+            "airtable_record_id": record_id,
+            "skipped": True,
+            "skill_verification_score": None,
+            "per_skill_results": [],
+        }
+
+    skills = (normalized_candidates.get("normalized_json") or {}).get("skills", [])
+    if not skills:
+        context.log.info(f"No skills for {record_id}; skipping skill verification")
+        return {
+            "candidate_id": str(candidate_id),
+            "airtable_record_id": record_id,
+            "skipped": True,
+            "skill_verification_score": None,
+            "per_skill_results": [],
+        }
+
+    skills_with_evidence = [
+        {
+            "name": s.get("name", "?") if isinstance(s, dict) else str(s),
+            "evidence": s.get("evidence", "") if isinstance(s, dict) else "",
+        }
+        for s in skills
+    ]
+    skills_with_evidence = [s for s in skills_with_evidence if s["name"] != "?"]
+
+    if not skills_with_evidence:
+        return {
+            "candidate_id": str(candidate_id),
+            "airtable_record_id": record_id,
+            "skipped": True,
+            "skill_verification_score": None,
+            "per_skill_results": [],
+        }
+
+    github = context.resources.github
+    openrouter = context.resources.openrouter
+
+    commit_history = candidate_github_commit_history.get("commit_history") or {}
+    repos = commit_history.get("repos", [])[:10]
+
+    repo_metadata = []
+    for r in repos:
+        full_name = r.get("full_name", "")
+        if "/" not in full_name:
+            continue
+        owner, repo_name = full_name.split("/", 1)
+        meta = fetch_repo_metadata(owner, repo_name, github)
+        repo_metadata.append(meta)
+
+    github_data = {
+        "username": github_handle,
+        "repo_metadata": repo_metadata,
+        "commit_history": commit_history,
+    }
+
+    openrouter.set_context(
+        run_id=context.run_id,
+        asset_key="candidate_skill_verification",
+        partition_key=record_id,
+    )
+
+    llm_results = asyncio.run(
+        run_with_interrupt_check(
+            context,
+            verify_skills_llm(
+                skills_with_evidence=skills_with_evidence,
+                github_data=github_data,
+                openrouter=openrouter,
+            ),
+        )
+    )
+
+    now = datetime.now().isoformat()
+    per_skill_results = []
+    verified_count = 0
+    total_verifiable = 0
+
+    for r in llm_results:
+        verified = r.get("verified", False)
+        confidence = float(r.get("confidence", 0))
+        evidence = r.get("evidence", "") or ""
+        skill_name = r.get("skill", "?")
+
+        if skill_name == "?":
+            continue
+
+        total_verifiable += 1
+        if verified:
+            verified_count += 1
+
+        status = (
+            SkillVerificationStatusEnum.VERIFIED
+            if verified
+            else SkillVerificationStatusEnum.UNVERIFIED
+        )
+        per_skill_results.append(
+            {
+                "skill_name": skill_name,
+                "verified": verified,
+                "confidence": confidence,
+                "evidence": evidence,
+                "verification_status": status.value,
+                "verification_evidence": {
+                    "source": "github",
+                    "confidence": confidence,
+                    "snippet": evidence[:200],
+                },
+                "verified_at": now,
+            }
+        )
+
+    score = verified_count / total_verifiable if total_verifiable > 0 else None
+
+    context.add_output_metadata(
+        {
+            "skills_verified": len(per_skill_results),
+            "verified_count": verified_count,
+            "skill_verification_score": score,
+        }
+    )
+
+    return {
+        "candidate_id": str(candidate_id),
+        "airtable_record_id": record_id,
+        "skipped": False,
+        "skill_verification_score": score,
+        "per_skill_results": per_skill_results,
+    }
+
+
+@asset(
+    partitions_def=candidate_partitions,
+    ins={"normalized_candidates": AssetIn()},
     description="LLM fitness score per candidate per desired job category (1-100 → stored 0-1)",
     group_name="candidates",
     io_manager_key="postgres_io",
@@ -623,7 +865,10 @@ def candidate_role_fitness(
 
 @asset(
     partitions_def=candidate_partitions,
-    ins={"normalized_candidates": AssetIn()},
+    ins={
+        "normalized_candidates": AssetIn(),
+        "candidate_skill_verification": AssetIn(),
+    },
     description="Write normalized candidate fields back to Airtable (N)-prefixed columns",
     group_name="candidates",
     required_resource_keys={"airtable", "matchmaking"},
@@ -632,6 +877,7 @@ def candidate_role_fitness(
 def airtable_candidate_sync(
     context: AssetExecutionContext,
     normalized_candidates: dict[str, Any],
+    candidate_skill_verification: dict[str, Any],
 ) -> dict[str, Any]:
     """Write all normalized candidate fields back to the same Airtable row under (N)-prefixed columns.
 

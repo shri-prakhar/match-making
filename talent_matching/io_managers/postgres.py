@@ -5,7 +5,7 @@ using SQLAlchemy models for type safety and consistency.
 """
 
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -26,6 +26,7 @@ from talent_matching.models import (
 from talent_matching.models.candidates import (
     CandidateAttribute,
     CandidateExperience,
+    CandidateGithubCommitHistory,
     CandidateProject,
     CandidateRoleFitness,
     CandidateSkill,
@@ -35,8 +36,10 @@ from talent_matching.models.enums import (
     LocationTypeEnum,
     RequirementTypeEnum,
     SeniorityEnum,
+    SkillVerificationStatusEnum,
 )
 from talent_matching.models.jobs import JobRequiredSkill
+from talent_matching.models.skills import Skill
 from talent_matching.services.timezone_resolver import resolve_candidate_timezone
 from talent_matching.skills.resolver import get_or_create_skill
 from talent_matching.utils.airtable_mapper import parse_comma_separated
@@ -251,6 +254,11 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             self._store_matches(context, obj if isinstance(obj, list) else [obj])
         elif table_name == "candidate_role_fitness":
             self._store_candidate_role_fitness(context, obj if isinstance(obj, list) else [obj])
+        elif table_name == "candidate_github_commit_history":
+            if obj is not None:
+                self._store_candidate_github_commit_history(context, obj)
+        elif table_name == "candidate_skill_verification":
+            self._store_candidate_skill_verification(context, obj)
         else:
             context.log.warning(f"Unknown asset type: {table_name}")
 
@@ -274,6 +282,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             "raw_jobs": RawJob,
             "normalized_jobs": NormalizedJob,
             "matches": Match,
+            "candidate_github_commit_history": CandidateGithubCommitHistory,
         }
 
         model = model_map.get(table_name)
@@ -1240,3 +1249,92 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
         session.commit()
         session.close()
         context.log.info(f"Stored {len(records)} candidate_role_fitness rows")
+
+    def _store_candidate_github_commit_history(
+        self, context: OutputContext, data: dict[str, Any]
+    ) -> None:
+        """Store commit history from blobless git clone."""
+        if not data:
+            return
+        session = self._get_session()
+        candidate_id = data.get("candidate_id")
+        if not candidate_id:
+            session.close()
+            return
+        candidate_uuid = UUID(str(candidate_id))
+        values = {
+            "candidate_id": candidate_uuid,
+            "airtable_record_id": data.get("airtable_record_id"),
+            "github_username": data.get("github_username", ""),
+            "commit_history": data.get("commit_history", {}),
+        }
+        stmt = insert(CandidateGithubCommitHistory).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["candidate_id"],
+            set_={
+                "github_username": stmt.excluded.github_username,
+                "commit_history": stmt.excluded.commit_history,
+            },
+        )
+        session.execute(stmt)
+        session.commit()
+        session.close()
+        context.log.info(f"Stored candidate_github_commit_history for candidate {candidate_id}")
+
+    def _store_candidate_skill_verification(
+        self, context: OutputContext, data: dict[str, Any]
+    ) -> None:
+        """Update candidate_skills verification columns and normalized_candidates.skill_verification_score."""
+        if not data or data.get("skipped"):
+            return
+        session = self._get_session()
+        candidate_id_raw = data.get("candidate_id")
+        if not candidate_id_raw:
+            session.close()
+            return
+        candidate_uuid = UUID(str(candidate_id_raw))
+        score = data.get("skill_verification_score")
+        per_skill = data.get("per_skill_results", [])
+
+        for item in per_skill:
+            skill_name = item.get("skill_name", "").strip()
+            if not skill_name:
+                continue
+            status_str = item.get("verification_status")
+            evidence = item.get("verification_evidence")
+            verified_at_str = item.get("verified_at")
+
+            status_enum = None
+            if status_str:
+                status_enum = SkillVerificationStatusEnum(status_str)
+
+            cs = session.execute(
+                select(CandidateSkill)
+                .join(Skill, CandidateSkill.skill_id == Skill.id)
+                .where(
+                    CandidateSkill.candidate_id == candidate_uuid,
+                    Skill.name.ilike(skill_name),
+                )
+            ).scalar_one_or_none()
+            if cs:
+                cs.verification_status = status_enum
+                cs.verification_evidence = evidence
+                if verified_at_str:
+                    cs.verified_at = (
+                        datetime.fromisoformat(verified_at_str)
+                        if isinstance(verified_at_str, str)
+                        else verified_at_str
+                    )
+
+        nc = session.execute(
+            select(NormalizedCandidate).where(NormalizedCandidate.id == candidate_uuid)
+        ).scalar_one_or_none()
+        if nc and score is not None:
+            nc.skill_verification_score = float(score)
+
+        session.commit()
+        session.close()
+        context.log.info(
+            f"Updated skill verification for candidate {candidate_id_raw} "
+            f"(score={score}, {len(per_skill)} skills)"
+        )

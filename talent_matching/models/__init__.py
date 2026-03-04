@@ -4,6 +4,7 @@ from talent_matching.models.base import Base
 from talent_matching.models.candidates import (
     CandidateAttribute,
     CandidateExperience,
+    CandidateGithubCommitHistory,
     CandidateGithubMetrics,
     CandidateLinkedinMetrics,
     CandidateProject,
@@ -24,6 +25,7 @@ from talent_matching.models.enums import (
     RequirementTypeEnum,
     ReviewStatusEnum,
     SeniorityEnum,
+    SkillVerificationStatusEnum,
     VerificationStatusEnum,
     proficiency_scale_for_prompt,
 )
@@ -46,6 +48,7 @@ __all__ = [
     "CVExtractionMethodEnum",
     "SeniorityEnum",
     "VerificationStatusEnum",
+    "SkillVerificationStatusEnum",
     "ReviewStatusEnum",
     "CompanyStageEnum",
     "EmploymentTypeEnum",
@@ -67,6 +70,7 @@ __all__ = [
     "CandidateAttribute",
     "CandidateRoleFitness",
     "CandidateGithubMetrics",
+    "CandidateGithubCommitHistory",
     "CandidateTwitterMetrics",
     "CandidateLinkedinMetrics",
     # Jobs
