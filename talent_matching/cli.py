@@ -11,6 +11,11 @@ def remote_ui():
     os.execvp("bash", ["bash", str(script)] + sys.argv[1:])
 
 
+def setup_db():
+    script = PROJECT_ROOT / "scripts" / "setup-db-local.sh"
+    os.execvp("bash", ["bash", str(script)] + sys.argv[1:])
+
+
 def local_dev():
     os.chdir(PROJECT_ROOT)
     os.environ.setdefault("DAGSTER_HOME", str(PROJECT_ROOT))

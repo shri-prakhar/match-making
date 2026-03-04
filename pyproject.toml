@@ -12,6 +12,7 @@ talent-matching = "talent_matching.definitions:main"
 remote-ui = "talent_matching.cli:remote_ui"
 local-dev = "talent_matching.cli:local_dev"
 deploy = "talent_matching.cli:deploy"
+setup-db = "talent_matching.cli:setup_db"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.15"
