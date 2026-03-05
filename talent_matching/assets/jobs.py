@@ -199,6 +199,90 @@ def _is_notion_url(url: str) -> bool:
     return "notion.site" in url or "notion.so" in url
 
 
+def _build_job_description_for_scoring(
+    raw_job: dict[str, Any],
+    normalized_job: dict[str, Any],
+) -> str:
+    """Build job description for LLM scoring: prefer raw text, fallback to normalized content.
+
+    When raw_job.job_description is empty (e.g. loaded from DB without it, or different
+    ingestion path), we try normalized_job.job_description (stored at normalization time),
+    then synthesize from role_summary, narratives, requirements, and responsibilities.
+    """
+    raw_desc = (raw_job.get("job_description") or "").strip()
+    if raw_desc and len(raw_desc) >= 50:
+        return raw_desc
+
+    norm_desc = (normalized_job.get("job_description") or "").strip()
+    if norm_desc and len(norm_desc) >= 50:
+        return norm_desc
+
+    parts: list[str] = []
+    role_summary = (normalized_job.get("role_summary") or "").strip()
+    if role_summary:
+        parts.append(f"Role Summary: {role_summary}")
+
+    narratives = normalized_job.get("narratives") or {}
+    nj = normalized_job.get("normalized_json") or normalized_job
+    narratives = narratives or nj.get("narratives") or {}
+    for key, label in [
+        ("role", "Role Description"),
+        ("experience", "Ideal Experience"),
+        ("domain", "Domain Expertise"),
+        ("technical", "Technical Requirements"),
+        ("personality", "Work Style"),
+        ("impact", "Impact & Scope"),
+    ]:
+        val = narratives.get(key) or normalized_job.get(f"narrative_{key}")
+        if val and isinstance(val, str) and val.strip():
+            parts.append(f"{label}:\n{val.strip()}")
+
+    reqs = nj.get("requirements") or {}
+    must = reqs.get("must_have_skills") or []
+    nice = reqs.get("nice_to_have_skills") or []
+    if must:
+        names = [
+            s.get("name", "") if isinstance(s, dict) else str(s)
+            for s in must
+            if (s.get("name") if isinstance(s, dict) else s)
+        ]
+        if names:
+            parts.append(f"Must-have skills: {', '.join(names)}")
+    if nice:
+        names = [
+            s.get("name", "") if isinstance(s, dict) else str(s)
+            for s in nice
+            if (s.get("name") if isinstance(s, dict) else s)
+        ]
+        if names:
+            parts.append(f"Nice-to-have skills: {', '.join(names)}")
+
+    resp = normalized_job.get("responsibilities") or nj.get("responsibilities") or []
+    if resp and isinstance(resp, list):
+        bullets = [f"  - {r}" for r in resp if r and isinstance(r, str)]
+        if bullets:
+            parts.append("Responsibilities:\n" + "\n".join(bullets))
+
+    seniority = normalized_job.get("seniority_level") or nj.get("seniority_level")
+    if seniority:
+        parts.append(f"Seniority: {seniority}")
+
+    min_years = reqs.get("years_of_experience_min") or normalized_job.get("min_years_experience")
+    if min_years is not None:
+        parts.append(f"Minimum years of experience: {min_years}")
+
+    domain = reqs.get("domain_experience") or normalized_job.get("domain_experience")
+    if domain:
+        domain_str = ", ".join(domain) if isinstance(domain, list) else str(domain)
+        parts.append(f"Domain experience: {domain_str}")
+
+    tech = nj.get("tech_stack") or normalized_job.get("tech_stack")
+    if tech and isinstance(tech, list):
+        parts.append(f"Tech stack: {', '.join(str(t) for t in tech)}")
+
+    return "\n\n".join(parts) if parts else raw_desc or "(No job description available)"
+
+
 @asset(
     partitions_def=job_partitions,
     ins={"raw_jobs": AssetIn()},
@@ -206,7 +290,7 @@ def _is_notion_url(url: str) -> bool:
     group_name="jobs",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter"},
-    code_version="2.3.1",  # bump after file format; no logic change
+    code_version="2.3.2",  # v2.3.2: store job_description in payload for downstream scoring
     metadata={
         "table": "normalized_jobs",
         "llm_operation": "normalize_job",
@@ -269,6 +353,7 @@ def normalized_jobs(
     payload = {
         "airtable_record_id": record_id,
         **data,
+        "job_description": job_description,
         "normalized_json": data,
         "prompt_version": NORMALIZE_JOB_PROMPT_VERSION,
         "model_version": result.model,
@@ -971,7 +1056,7 @@ def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
     group_name="matching",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="1.1.0",
+    code_version="1.3.0",  # v1.3.0: fallback job description from normalized content when raw empty
     metadata={"table": "matches"},
     op_tags={"dagster/concurrency_key": "openrouter_api"},
 )
@@ -985,7 +1070,9 @@ def llm_refined_shortlist(
     """Score each of 30 matches with advanced AI, select final max 15 who fulfill all must-haves."""
     record_id = context.partition_key
     if not matches:
-        context.log.info(f"[llm_refined_shortlist] record_id={record_id} No matches to refine; skipping")
+        context.log.info(
+            f"[llm_refined_shortlist] record_id={record_id} No matches to refine; skipping"
+        )
         return []
 
     candidates_list = _to_candidate_list_for_shortlist(normalized_candidates)
@@ -997,7 +1084,7 @@ def llm_refined_shortlist(
     raw_job = raw_jobs if isinstance(raw_jobs, dict) else (raw_jobs or [{}])[0]
     job_id_norm = str(job.get("id", ""))
     job_title = job.get("job_title") or job.get("job_category") or "Unknown"
-    job_description = (raw_job.get("job_description") or "").strip()
+    job_description = _build_job_description_for_scoring(raw_job, job)
 
     req_skills = context.resources.matchmaking.get_job_required_skills([job_id_norm])
     all_reqs = req_skills.get(job_id_norm, [])
@@ -1008,55 +1095,76 @@ def llm_refined_shortlist(
         run_id=context.run_id,
         asset_key="llm_refined_shortlist",
         partition_key=context.partition_key,
-        code_version="1.1.0",
+        code_version="1.3.0",
     )
 
     non_negotiables = (raw_job.get("non_negotiables") or "").strip() or None
     nice_to_have = (raw_job.get("nice_to_have") or "").strip() or None
     location_raw = (raw_job.get("location_raw") or "").strip() or None
 
-    scored: list[dict[str, Any]] = []
-    for i, m in enumerate(matches):
+    # Build list of (match, candidate) for valid candidates; skip missing ones
+    scored_items: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for m in matches:
         cand_id = str(m.get("candidate_id", ""))
         candidate = cand_by_id.get(cand_id)
         if not candidate:
             context.log.warning(
-            f"[llm_refined_shortlist] record_id={record_id} Candidate {cand_id} not in normalized_candidates; skipping"
-        )
+                f"[llm_refined_shortlist] record_id={record_id} Candidate {cand_id} not in normalized_candidates; skipping"
+            )
             continue
-        cand_for_llm: dict[str, Any] = candidate
+        scored_items.append((m, candidate))
 
-        async def _score_one() -> dict[str, Any]:
-            return await score_candidate_job_fit(
-                openrouter,
-                cand_for_llm,
-                job_description,
-                job,
-                must_haves,
-                non_negotiables=non_negotiables,
-                nice_to_have=nice_to_have,
-                location_raw=location_raw,
-            )
+    # Max concurrent LLM calls; matches Dagster openrouter_api pool limit (50) and OpenRouter rate limits
+    max_concurrent_llm = 30
 
-        result = asyncio.run(run_with_interrupt_check(context, _score_one()))
-        scored.append(
-            {
-                "candidate_id": cand_id,
-                "candidate_name": candidate.get("full_name") or "Unknown",
-                "fit_score": result.get("fit_score", 0),
-                "pros": result.get("pros") or [],
-                "cons": result.get("cons") or [],
-                "fulfills_all_must_haves": result.get("fulfills_all_must_haves", False),
-                "_match": m,
-                "_result": result,
-            }
+    async def _score_one(m: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+        return await score_candidate_job_fit(
+            openrouter,
+            candidate,
+            job_description,
+            job,
+            must_haves,
+            non_negotiables=non_negotiables,
+            nice_to_have=nice_to_have,
+            location_raw=location_raw,
         )
-        if (i + 1) % 5 == 0 or i + 1 == len(matches):
-            fulfills = sum(1 for s in scored if s.get("fulfills_all_must_haves"))
-            context.log.info(
-                f"[llm_refined_shortlist] record_id={record_id} Progress {i + 1}/{len(matches)} scored, "
-                f"{fulfills} fulfill must-haves"
-            )
+
+    async def _score_all() -> list[dict[str, Any]]:
+        sem = asyncio.Semaphore(max_concurrent_llm)
+
+        async def limited(
+            m: dict[str, Any], c: dict[str, Any]
+        ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+            async with sem:
+                result = await _score_one(m, c)
+                return (m, c, result)
+
+        tasks = [limited(m, c) for m, c in scored_items]
+        results = await asyncio.gather(*tasks)
+
+        return [
+            {
+                "candidate_id": str(m.get("candidate_id", "")),
+                "candidate_name": c.get("full_name") or "Unknown",
+                "fit_score": r.get("fit_score", 0),
+                "pros": r.get("pros") or [],
+                "cons": r.get("cons") or [],
+                "fulfills_all_must_haves": r.get("fulfills_all_must_haves", False),
+                "_match": m,
+                "_result": r,
+            }
+            for m, c, r in results
+        ]
+
+    context.log.info(
+        f"[llm_refined_shortlist] record_id={record_id} Scoring {len(scored_items)} candidates in parallel (max {max_concurrent_llm} concurrent)"
+    )
+    scored = asyncio.run(run_with_interrupt_check(context, _score_all()))
+    fulfills = sum(1 for s in scored if s.get("fulfills_all_must_haves"))
+    context.log.info(
+        f"[llm_refined_shortlist] record_id={record_id} Scored {len(scored)}/{len(matches)}, "
+        f"{fulfills} fulfill must-haves"
+    )
 
     async def _select() -> dict[str, Any]:
         return await select_final_shortlist(
