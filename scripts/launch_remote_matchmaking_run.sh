@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# Launch one ats_matchmaking_pipeline run on the REMOTE backend.
-# The run is written to the remote Postgres (via tunnel) so the remote daemon executes it.
+# Launch one ats_matchmaking_pipeline run.
 #
-# Prerequisites:
-#   - poetry run remote-ui RUNNING (tunnel localhost:15432 → remote Postgres, 4266 → remote gRPC)
+# Prerequisites (choose one):
+#   - Remote: poetry run remote-ui RUNNING (tunnel localhost:15432 → remote Postgres, 4266 → remote gRPC)
+#   - Local:  poetry run local-matchmaking RUNNING (tunnel + local dagster dev; code runs on your machine)
 #   - .env has POSTGRES_*; we force POSTGRES_HOST=localhost and POSTGRES_PORT=15432 for the tunnel
 #
 # If no run appears: launch from the UI instead (Jobs → ats_matchmaking_pipeline → Launch run).
@@ -26,7 +26,7 @@ fi
 
 # Force run to be written to REMOTE DB via tunnel. POSTGRES_HOST must be localhost.
 export POSTGRES_HOST=localhost
-export POSTGRES_PORT=15432
+export POSTGRES_PORT="${POSTGRES_REMOTE_TUNNEL_PORT:-15432}"
 unset DAGSTER_POSTGRES_PORT 2>/dev/null || true
 
 export DAGSTER_HOME=$(mktemp -d)

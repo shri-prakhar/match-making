@@ -1,59 +1,8 @@
 ---
-description: How to access the remote Dagster gRPC server and Postgres when checking matchmaking or running scripts
-alwaysApply: true
+description: Deprecated — see scripts-and-db-access.mdc
+alwaysApply: false
 ---
 
-# Remote gRPC Server and DB Access
+# Deprecated
 
-## Overview
-
-- **Remote server**: Set in `.env` as `REMOTE_HOST` (e.g. `root@89.167.123.152`). Project on remote: `REMOTE_PROJECT_DIR` in `.env` or default `/root/match-making`.
-- **Dagster runs on the remote**: Code server (gRPC) and daemon run in Docker on the remote; jobs execute there. The local machine connects via SSH tunnels.
-
-## Connecting to the remote (local → remote)
-
-1. **Start the remote UI** (opens tunnels and local webserver):
-   ```bash
-   poetry run remote-ui
-   ```
-   Uses `REMOTE_HOST` from `.env`. Script: `scripts/dagster-remote-ui.sh`.
-
-2. **Tunnels created** (while remote-ui is running):
-   - **PostgreSQL**: remote `POSTGRES_PORT` (default 5432) → **localhost:15432**
-   - **gRPC (Dagster code server)**: remote 4266 → **localhost:4266**
-   - **Web UI**: http://localhost:3000 (dagster-webserver runs locally and talks to gRPC at localhost:4266 and DB at localhost:15432)
-
-## Launching runs
-
-- **Always use the launch script** so runs are written to the remote DB and picked up by the remote daemon:
-  ```bash
-  ./scripts/launch_remote_matchmaking_run.sh recIqBsuF33YrIrMX
-  ```
-  The script sources `.env` and sets `POSTGRES_PORT=15432` before invoking `dagster job launch`.
-
-## Checking run status
-
-- **GraphQL** (remote-ui must be running): `POST http://localhost:3000/graphql` with queries like `runsOrError(filter: {...})`.
-- **Direct Postgres**: `POSTGRES_HOST=localhost POSTGRES_PORT=15432` when querying the `runs` table.
-- **Inspect matches**: `set -a && source .env && set +a && export POSTGRES_HOST=localhost POSTGRES_PORT=15432 && poetry run python scripts/inspect_matches.py <partition_id>`.
-
-## When to use the tunneled DB
-
-- **Checking matchmaking results** (e.g. `inspect_matches.py`, `inspect_candidate.py`), or any script that must see data written by runs on the remote: use the **tunneled** Postgres.
-- With **remote-ui running**, export before the command:
-  - `POSTGRES_HOST=localhost`
-  - `POSTGRES_PORT=15432`
-  Then run e.g. `poetry run python scripts/inspect_matches.py <partition_id>`.
-
-## Deploy before testing
-
-- After code changes, deploy to remote first: `./scripts/run_remote_matchmaking.sh [partition_id]`.
-- Then start remote-ui (if not running), and launch the run via the launch script.
-
-## Summary
-
-| Resource        | Remote (on server) | From local (with remote-ui)   |
-|----------------|---------------------|-------------------------------|
-| Postgres       | port 5432           | localhost:**15432** (tunnel)  |
-| Dagster gRPC   | port 4266           | localhost:**4266** (tunnel)   |
-| Dagster UI     | —                   | http://localhost:3000        |
+This rule has been merged into **scripts-and-db-access.mdc**. See that rule for the current decision table and commands.

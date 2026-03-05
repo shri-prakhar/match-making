@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Quick check of DB row counts for matchmaking: normalized_jobs, normalized_candidates, vectors, matches."""
+"""Quick check of DB row counts for matchmaking: normalized_jobs, normalized_candidates, vectors, matches.
+
+Usage:
+    poetry run with-local-db python scripts/check_matchmaking_data.py
+    poetry run with-remote-db python scripts/check_matchmaking_data.py
+"""
 
 import os
 import sys

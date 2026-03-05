@@ -1,0 +1,60 @@
+---
+description: When to use which command for scripts, Dagster, and DB access (local vs remote)
+alwaysApply: true
+---
+
+# Scripts and DB Access
+
+## Decision Table
+
+| Goal | Command | DB Target |
+|------|---------|-----------|
+| Start remote Dagster UI (tunnels + webserver) | `poetry run remote-ui` | Remote (tunnel) |
+| Run Dagster locally with remote DB (fast debug) | `poetry run local-matchmaking` | Remote (tunnel) |
+| Set up local Postgres + migrations | `poetry run setup-db` | Local |
+| Deploy code to remote server | `poetry run deploy` | — |
+| Launch matchmaking run (remote) | `./scripts/launch_remote_matchmaking_run.sh <partition>` | Remote |
+| Launch skill verification (remote) | `./scripts/launch_candidate_skill_verification.sh [partition]` | Remote |
+| Deploy + instructions | `./scripts/run_remote_matchmaking.sh [partition]` | — |
+| Inspect matches/candidate/job on **local** DB | `poetry run with-local-db python scripts/inspect_*.py <partition>` | Local |
+| Inspect matches/candidate/job on **remote** DB | `poetry run with-remote-db python scripts/inspect_*.py <partition>` | Remote |
+| Run any DB script on local DB | `poetry run with-local-db python scripts/<script>.py ...` | Local |
+| Run any DB script on remote DB | `poetry run with-remote-db python scripts/<script>.py ...` | Remote |
+
+## Prerequisites for Remote DB
+
+`poetry run remote-ui` **or** `poetry run local-matchmaking` must be running (SSH tunnel to remote Postgres). The tunnel maps remote Postgres to `localhost:POSTGRES_REMOTE_TUNNEL_PORT` (default 15432).
+
+## Poetry Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `remote-ui` | Start Dagster UI locally; tunnels to remote Postgres + gRPC. Jobs run on remote. |
+| `local-matchmaking` | Run Dagster dev locally; code executes on your machine, DB via tunnel to remote. |
+| `setup-db` | Start local Postgres (Docker) and run migrations. |
+| `deploy` | Git pull + docker compose rebuild on remote. |
+| `with-local-db` | Run a command with `POSTGRES_HOST=localhost`, `POSTGRES_PORT=5432`. Loads `.env` automatically. |
+| `with-remote-db` | Run a command with `POSTGRES_HOST=localhost`, `POSTGRES_PORT=15432` (or `POSTGRES_REMOTE_TUNNEL_PORT`). Loads `.env` automatically. |
+
+## Shell Scripts (use directly)
+
+| Script | Purpose |
+|--------|---------|
+| `./scripts/launch_remote_matchmaking_run.sh [partition]` | Launch ats_matchmaking_pipeline run. Requires remote-ui or local-matchmaking running. |
+| `./scripts/launch_candidate_skill_verification.sh [partition]` | Launch skill verification for a candidate. Requires remote-ui running. |
+| `./scripts/run_remote_matchmaking.sh [partition]` | Deploy to remote, then print instructions to launch run. |
+
+## DB Target Summary
+
+| Target | Host | Port | When |
+|--------|------|------|------|
+| **Local** | localhost | 5432 | Local Docker Postgres, setup-db |
+| **Remote (tunnel)** | localhost | 15432 (or `POSTGRES_REMOTE_TUNNEL_PORT`) | remote-ui or local-matchmaking running |
+
+## .env Configuration
+
+- `POSTGRES_HOST`, `POSTGRES_PORT` — local DB (default 5432)
+- `POSTGRES_REMOTE_TUNNEL_PORT` — local port for SSH tunnel to remote Postgres (default 15432)
+- `REMOTE_HOST` — SSH target (e.g. `root@89.167.123.152`)
+
+All configuration is in `.env`; no manual env export needed when using `with-local-db` or `with-remote-db`.

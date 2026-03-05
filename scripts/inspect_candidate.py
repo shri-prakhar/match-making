@@ -2,8 +2,8 @@
 """Inspect a candidate's normalized data by partition ID (airtable_record_id).
 
 Usage:
-    python scripts/inspect_candidate.py <partition_id>
-    python scripts/inspect_candidate.py rechGJvgloO4z6uYD
+    poetry run with-local-db python scripts/inspect_candidate.py <partition_id>
+    poetry run with-remote-db python scripts/inspect_candidate.py rechGJvgloO4z6uYD
 
 This script displays all normalized information about a candidate including:
 - Raw candidate data
@@ -157,7 +157,31 @@ def inspect_candidate(partition_id: str):
         print_field("Model Version", normalized["model_version"], 1)
         print_field("Prompt Version", normalized["prompt_version"], 1)
         print_field("Confidence Score", normalized["confidence_score"], 1)
+        print_field("Skill Verification Score", normalized.get("skill_verification_score"), 1)
         print_field("Normalized At", normalized["normalized_at"], 1)
+
+        # ─────────────────────────────────────────────────────────
+        # GITHUB COMMIT HISTORY (Skill Verification)
+        # ─────────────────────────────────────────────────────────
+        cur.execute(
+            """SELECT github_username, commit_history, fetched_at
+               FROM candidate_github_commit_history
+               WHERE candidate_id = %s""",
+            (normalized_id,),
+        )
+        gh_commit = cur.fetchone()
+        if gh_commit:
+            print_section("GITHUB COMMIT HISTORY (Skill Verification)")
+            print_field("Username", gh_commit["github_username"], 1)
+            print_field("Fetched At", gh_commit["fetched_at"], 1)
+            ch = gh_commit.get("commit_history") or {}
+            repos = ch.get("repos", [])
+            print_field("Repos Cloned", len(repos), 1)
+            total_commits = sum(len(r.get("commits", [])) for r in repos)
+            print_field("Total Commits", total_commits, 1)
+        else:
+            print_section("GITHUB COMMIT HISTORY (Skill Verification)")
+            print("  (Not yet fetched - run candidate_github_commit_history asset)")
 
         # ─────────────────────────────────────────────────────────
         # SKILLS (Related Table)
@@ -166,6 +190,7 @@ def inspect_candidate(partition_id: str):
 
         cur.execute(
             """SELECT cs.rating, cs.years_experience, cs.notable_achievement,
+                      cs.verification_status, cs.verification_evidence, cs.verified_at,
                       s.name as skill_name
                FROM candidate_skills cs
                LEFT JOIN skills s ON cs.skill_id = s.id
@@ -179,12 +204,26 @@ def inspect_candidate(partition_id: str):
             print("  (No skills in related table - data is in skills_summary array)")
         else:
             for skill in skills:
+                ver = skill.get("verification_status") or "—"
+                ev = skill.get("verification_evidence")
+                conf = ev.get("confidence") if isinstance(ev, dict) else None
+                conf_str = ""
+                if conf is not None:
+                    try:
+                        conf_str = f", confidence: {float(conf):.2f}"
+                    except (TypeError, ValueError):
+                        conf_str = f", confidence: {conf}"
                 print(
                     f"  • {skill['skill_name'] or 'Unknown'} "
-                    f"(rating: {skill['rating']}/10, years: {skill['years_experience']})"
+                    f"(rating: {skill['rating']}/10, years: {skill['years_experience']}, verified: {ver}{conf_str})"
                 )
                 if skill["notable_achievement"]:
                     print(f"    Achievement: {format_value(skill['notable_achievement'])}")
+                if ev:
+                    if isinstance(ev, dict):
+                        print(f"    Evidence: {ev.get('snippet', ev)}")
+                    else:
+                        print(f"    Evidence: {format_value(ev)}")
 
         # ─────────────────────────────────────────────────────────
         # WORK EXPERIENCE (Related Table)

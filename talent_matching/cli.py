@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -26,6 +28,12 @@ def local_dev():
     )
 
 
+def local_matchmaking():
+    """Run matchmaking locally with remote DB (tunnel) for fast debug loops."""
+    script = PROJECT_ROOT / "scripts" / "local-matchmaking-dev.sh"
+    os.execvp("bash", ["bash", str(script)] + sys.argv[1:])
+
+
 def deploy():
     """Pull latest code, rebuild containers, restart the stack."""
     os.chdir(PROJECT_ROOT)
@@ -45,3 +53,35 @@ def deploy():
     print()
     print("Deploy complete. Checking service status...")
     subprocess.run(["docker", "compose", "-f", "docker-compose.prod.yml", "ps"])
+
+
+def _run_with_db_env(port: str | int) -> None:
+    """Set POSTGRES_* for DB access, then exec remaining args. Caller must load .env first."""
+    os.environ["POSTGRES_HOST"] = "localhost"
+    os.environ["POSTGRES_PORT"] = str(port)
+
+    args = sys.argv[1:]
+    if not args:
+        print("Usage: poetry run with-local-db <command> [args...]", file=sys.stderr)
+        print("       poetry run with-remote-db <command> [args...]", file=sys.stderr)
+        print(
+            "Example: poetry run with-remote-db python scripts/inspect_matches.py recXXX",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    os.execvp(args[0], args)
+
+
+def with_local_db():
+    """Run a command with local DB env (POSTGRES_HOST=localhost, POSTGRES_PORT=5432)."""
+    load_dotenv(PROJECT_ROOT / ".env")
+    port = os.environ.get("POSTGRES_PORT", "5432")
+    _run_with_db_env(port)
+
+
+def with_remote_db():
+    """Run a command with remote DB tunnel env (POSTGRES_HOST=localhost, POSTGRES_PORT=15432)."""
+    load_dotenv(PROJECT_ROOT / ".env")
+    port = os.environ.get("POSTGRES_REMOTE_TUNNEL_PORT", "15432")
+    _run_with_db_env(port)

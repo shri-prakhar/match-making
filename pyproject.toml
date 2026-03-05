@@ -11,8 +11,11 @@ packages = [{include = "talent_matching"}]
 talent-matching = "talent_matching.definitions:main"
 remote-ui = "talent_matching.cli:remote_ui"
 local-dev = "talent_matching.cli:local_dev"
+local-matchmaking = "talent_matching.cli:local_matchmaking"
 deploy = "talent_matching.cli:deploy"
 setup-db = "talent_matching.cli:setup_db"
+with-local-db = "talent_matching.cli:with_local_db"
+with-remote-db = "talent_matching.cli:with_remote_db"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.15"

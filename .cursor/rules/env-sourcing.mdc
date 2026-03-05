@@ -5,12 +5,18 @@ alwaysApply: true
 
 # .env Sourcing
 
-When running scripts or commands that need env vars from `.env`:
+**For Python scripts that need DB access:** Prefer `poetry run with-local-db` or `poetry run with-remote-db`; they load `.env` automatically.
 
-- **Source `.env` into the shell** — do not read `.env` from within the script.
-- Use: `set -a && source .env && set +a && <command>`
-  - `set -a` exports all variables set by `source .env`
-  - `set +a` turns off auto-export afterward
+```bash
+poetry run with-remote-db python scripts/inspect_matches.py recXXX
+poetry run with-local-db python scripts/create_airtable_matches_table.py
+```
+
+**For other commands** that need env vars from `.env`:
+
+- Source `.env` into the shell: `set -a && source .env && set +a && <command>`
+- `set -a` exports all variables set by `source .env`
+- `set +a` turns off auto-export afterward
 
 Example:
 ```bash

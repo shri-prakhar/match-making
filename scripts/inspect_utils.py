@@ -10,7 +10,7 @@ def get_connection():
     """Create database connection."""
     return psycopg2.connect(
         host=os.environ["POSTGRES_HOST"],
-        port=os.environ["POSTGRES_PORT"],
+        port=int(os.environ["POSTGRES_PORT"]),
         user=os.environ["POSTGRES_USER"],
         password=os.environ["POSTGRES_PASSWORD"],
         dbname=os.environ["POSTGRES_DB"],

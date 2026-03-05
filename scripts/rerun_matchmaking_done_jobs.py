@@ -5,11 +5,9 @@ Useful to backfill the Matches table after fixing AIRTABLE_MATCHES_TABLE_ID on r
 
 Prerequisites:
   - poetry run remote-ui running (tunnels for gRPC + Postgres)
-  - .env sourced (set -a && source .env && set +a)
 
 Usage:
-  set -a && source .env && set +a && export POSTGRES_HOST=localhost POSTGRES_PORT=15432
-  poetry run python scripts/rerun_matchmaking_done_jobs.py
+  poetry run with-remote-db python scripts/rerun_matchmaking_done_jobs.py
 """
 
 import os
@@ -57,7 +55,11 @@ def launch_run(partition_id: str) -> bool:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
-        env={**os.environ, "POSTGRES_HOST": os.environ.get("POSTGRES_HOST", "localhost"), "POSTGRES_PORT": "15432"},
+        env={
+            **os.environ,
+            "POSTGRES_HOST": os.environ.get("POSTGRES_HOST", "localhost"),
+            "POSTGRES_PORT": os.environ.get("POSTGRES_PORT", "15432"),
+        },
     )
     return result.returncode == 0
 
@@ -83,9 +85,9 @@ def main() -> int:
             company = company or "?"
         print(f"  Launching {record_id}: {title} @ {company}...")
         if launch_run(record_id):
-            print(f"    Submitted.")
+            print("    Submitted.")
         else:
-            print(f"    Failed.")
+            print("    Failed.")
             return 1
     print(f"\nDone. Launched {len(records)} runs. Check Dagster UI (http://localhost:3000 → Runs).")
     return 0

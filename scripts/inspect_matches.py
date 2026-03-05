@@ -9,16 +9,13 @@ When --verify-location is passed, also checks that each matched candidate
 passes the location pre-filter (job Preferred Location vs candidate region/country/city).
 
 Usage:
-    python scripts/inspect_matches.py <partition_id>
-    python scripts/inspect_matches.py recXXXXXXXXXXXXXX
-    python scripts/inspect_matches.py recXXXXXXXXXXXXXX --verify-location
+    poetry run with-local-db python scripts/inspect_matches.py <partition_id>
+    poetry run with-remote-db python scripts/inspect_matches.py <partition_id>
+    poetry run with-remote-db python scripts/inspect_matches.py recXXXXXXXXXXXXXX --verify-location
 
 Requires:
     - Matches already computed and stored (run matches asset for the job partition).
-
-To inspect matches on the REMOTE server (when using poetry run remote-ui):
-    POSTGRES_HOST=localhost POSTGRES_PORT=15432 python scripts/inspect_matches.py <partition_id>
-  (15432 is the tunnel to remote Postgres; without it you default to port 5432 = local DB.)
+    - For remote: poetry run remote-ui or poetry run local-matchmaking must be running.
 """
 
 import os

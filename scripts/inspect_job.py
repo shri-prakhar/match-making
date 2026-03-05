@@ -2,8 +2,8 @@
 """Inspect a job's normalized data by partition ID (airtable_record_id).
 
 Usage:
-    python scripts/inspect_job.py <partition_id>
-    python scripts/inspect_job.py recXXXXXXXXXXXXXX
+    poetry run with-local-db python scripts/inspect_job.py <partition_id>
+    poetry run with-remote-db python scripts/inspect_job.py recXXXXXXXXXXXXXX
 
 This script displays all normalized information about a job including:
 - Raw job data
