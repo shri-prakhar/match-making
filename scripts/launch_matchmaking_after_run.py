@@ -7,6 +7,7 @@ then launches matchmaking for each partition.
 Prerequisites:
   - poetry run remote-ui RUNNING (webserver at localhost:3000, tunnel to remote)
   - Partitions must exist in the jobs dynamic partition (add via UI if needed)
+  - Deploy to remote first so the daemon has latest code (schedule_matchmaking_after_backfill --deploy or run_remote_matchmaking.sh)
 
 Usage:
   poetry run python scripts/launch_matchmaking_after_run.py jdhtiqny recABC,recDEF,recGHI
