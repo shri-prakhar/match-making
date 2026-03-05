@@ -212,7 +212,11 @@ class CandidateSkill(Base):
 
     # Skill verification (GitHub profile checks)
     verification_status: Mapped[SkillVerificationStatusEnum | None] = mapped_column(
-        Enum(SkillVerificationStatusEnum, name="skill_verification_status_enum"),
+        Enum(
+            SkillVerificationStatusEnum,
+            name="skill_verification_status_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=True,
     )
     verification_evidence: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
