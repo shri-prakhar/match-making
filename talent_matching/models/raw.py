@@ -60,6 +60,9 @@ class RawCandidate(Base):
     earn_profile_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     github_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     work_experience_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    job_status_raw: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Lead, Fraud, Hired, etc.
 
     # Timestamps
     ingested_at: Mapped[datetime] = mapped_column(

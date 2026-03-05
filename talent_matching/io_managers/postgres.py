@@ -10,7 +10,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from dagster import ConfigurableIOManager, InputContext, OutputContext
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -36,7 +36,6 @@ from talent_matching.models.enums import (
     LocationTypeEnum,
     RequirementTypeEnum,
     SeniorityEnum,
-    SkillVerificationStatusEnum,
 )
 from talent_matching.models.jobs import JobRequiredSkill
 from talent_matching.models.skills import Skill
@@ -392,6 +391,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             "earn_profile_url": _serialize_for_text(data.get("earn_profile_url")),
             "github_url": _serialize_for_text(data.get("github_url")),
             "work_experience_raw": _serialize_for_text(data.get("work_experience_raw")),
+            "job_status_raw": _serialize_for_text(data.get("job_status_raw")),
             "processing_status": ProcessingStatusEnum.PENDING,
         }
 
@@ -415,6 +415,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
                 "earn_profile_url": stmt.excluded.earn_profile_url,
                 "github_url": stmt.excluded.github_url,
                 "work_experience_raw": stmt.excluded.work_experience_raw,
+                "job_status_raw": stmt.excluded.job_status_raw,
             },
         )
 
@@ -590,6 +591,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             "prompt_version": data.get("prompt_version"),
             "model_version": data.get("model_version"),
             "confidence_score": normalized_json.get("confidence_score"),
+            "job_status": raw_candidate.job_status_raw,
             # Store full LLM response for narratives/vectorization
             "normalized_json": normalized_json,
         }
@@ -1296,6 +1298,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
         score = data.get("skill_verification_score")
         per_skill = data.get("per_skill_results", [])
 
+        valid_statuses = {"verified", "unverified", "no_evidence", "skipped"}
         for item in per_skill:
             skill_name = item.get("skill_name", "").strip()
             if not skill_name:
@@ -1304,9 +1307,11 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             evidence = item.get("verification_evidence")
             verified_at_str = item.get("verified_at")
 
-            status_enum = None
+            status_value = None
             if status_str:
-                status_enum = SkillVerificationStatusEnum(status_str)
+                normalized = str(status_str).strip().lower()
+                if normalized in valid_statuses:
+                    status_value = normalized
 
             cs = session.execute(
                 select(CandidateSkill)
@@ -1317,13 +1322,34 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
                 )
             ).scalar_one_or_none()
             if cs:
-                cs.verification_status = status_enum
-                cs.verification_evidence = evidence
+                verified_at_val = None
                 if verified_at_str:
-                    cs.verified_at = (
+                    verified_at_val = (
                         datetime.fromisoformat(verified_at_str)
                         if isinstance(verified_at_str, str)
                         else verified_at_str
+                    )
+                if status_value:
+                    session.execute(
+                        text(
+                            "UPDATE candidate_skills SET verification_status = CAST(:status AS skill_verification_status_enum), "
+                            "verification_evidence = CAST(:evidence AS jsonb), verified_at = :verified_at WHERE id = CAST(:id AS uuid)"
+                        ),
+                        {
+                            "status": status_value,
+                            "evidence": json.dumps(evidence) if evidence else None,
+                            "verified_at": verified_at_val,
+                            "id": str(cs.id),
+                        },
+                    )
+                else:
+                    session.execute(
+                        update(CandidateSkill)
+                        .where(CandidateSkill.id == cs.id)
+                        .values(
+                            verification_evidence=evidence,
+                            verified_at=verified_at_val,
+                        )
                     )
 
         nc = session.execute(

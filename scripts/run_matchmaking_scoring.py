@@ -74,12 +74,15 @@ def load_normalized_jobs(conn) -> list[dict[str, Any]]:
 
 
 def load_normalized_candidates(conn) -> list[dict[str, Any]]:
+    """Load candidates excluding Fraud (Job Status from Talent Airtable)."""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(
         """SELECT id, raw_candidate_id, airtable_record_id, full_name, skills_summary,
            years_of_experience, compensation_min, compensation_max, timezone,
-           desired_job_categories
-           FROM normalized_candidates ORDER BY id"""
+           desired_job_categories, job_status
+           FROM normalized_candidates
+           WHERE job_status IS NULL OR job_status != 'Fraud'
+           ORDER BY id"""
     )
     rows = cur.fetchall()
     cur.close()

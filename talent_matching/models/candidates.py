@@ -120,6 +120,13 @@ class NormalizedCandidate(Base):
     social_followers_total: Mapped[int] = mapped_column(Integer, default=0)
 
     # ═══════════════════════════════════════════════════════════════════
+    # TALENT WORKFLOW (from Airtable Job Status)
+    # ═══════════════════════════════════════════════════════════════════
+    job_status: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Lead, Fraud, Hired, etc. — pass-through from raw
+
+    # ═══════════════════════════════════════════════════════════════════
     # VERIFICATION & REVIEW
     # ═══════════════════════════════════════════════════════════════════
     verification_status: Mapped[VerificationStatusEnum] = mapped_column(

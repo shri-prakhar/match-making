@@ -127,6 +127,7 @@ AIRTABLE_COLUMN_MAPPING: dict[str, str] = {
     "Earn Profile": "earn_profile_url",
     "Git Hub Profile": "github_url",
     "Work Experience": "work_experience_raw",
+    "Job Status": "job_status_raw",
 }
 
 

@@ -70,6 +70,7 @@ class AirtableResource(ConfigurableResource):
         "Earn Profile": "earn_profile_url",
         "Git Hub Profile": "github_url",
         "Work Experience": "work_experience_raw",
+        "Job Status": "job_status_raw",
     }
 
     @property
@@ -238,6 +239,7 @@ class AirtableResource(ConfigurableResource):
             "earn_profile_url",
             "github_url",
             "work_experience_raw",
+            "job_status_raw",
         ]
 
         content = {k: mapped_record.get(k) for k in content_fields}

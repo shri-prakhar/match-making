@@ -368,6 +368,8 @@ def airtable_job_sync(
 # LOCATION PRE-FILTER: reduce candidate pool before scoring
 # ═══════════════════════════════════════════════════════════════════════════
 
+TALENT_JOB_STATUS_FRAUD = "Fraud"  # Exclude manually flagged fraudulent candidates
+
 
 @asset(
     partitions_def=job_partitions,
@@ -388,10 +390,9 @@ def location_prefiltered_candidates(
     normalized_candidates: Any,
     normalized_jobs: Any,
 ) -> list[dict[str, Any]]:
-    """Filter candidates by job Preferred Location before scoring.
+    """Filter candidates by Job Status (exclude Fraud) and job Preferred Location before scoring.
 
-    Uses location_raw from raw_jobs. If Global/No hard requirements or empty → return all.
-    Else filter normalized_candidates with candidate_matches_location.
+    First excludes candidates with Job Status = Fraud. Then applies location filter if set.
     """
 
     def _to_candidate_list(x: Any) -> list[dict[str, Any]]:
@@ -410,16 +411,26 @@ def location_prefiltered_candidates(
         return [x] if isinstance(x, dict) else []
 
     candidates = _to_candidate_list(normalized_candidates)
-    location_raw = (raw_jobs.get("location_raw") or "").strip() or None
 
+    # Exclude Fraud (Job Status from Talent Airtable)
+    eligible = [
+        c for c in candidates if (c.get("job_status") or "").strip() != TALENT_JOB_STATUS_FRAUD
+    ]
+    fraud_excluded = len(candidates) - len(eligible)
+    if fraud_excluded:
+        context.log.info(
+            f"Job Status filter: {fraud_excluded} Fraud excluded, {len(eligible)} eligible"
+        )
+
+    location_raw = (raw_jobs.get("location_raw") or "").strip() or None
     job_locations = parse_job_preferred_locations(location_raw)
     if job_locations is None:
-        context.log.info("No location filter (Global/empty); passing all candidates")
-        return candidates
+        context.log.info("No location filter (Global/empty); passing all eligible candidates")
+        return eligible
 
-    filtered = [c for c in candidates if candidate_matches_location(c, job_locations)]
+    filtered = [c for c in eligible if candidate_matches_location(c, job_locations)]
     context.log.info(
-        f"Location filter '{location_raw}': {len(filtered)}/{len(candidates)} candidates pass"
+        f"Location filter '{location_raw}': {len(filtered)}/{len(eligible)} candidates pass"
     )
     return filtered
 
