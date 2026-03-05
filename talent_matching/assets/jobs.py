@@ -31,6 +31,12 @@ from talent_matching.llm.operations.normalize_job import (
 from talent_matching.llm.operations.normalize_job import (
     normalize_job,
 )
+from talent_matching.llm.operations.score_candidate_job_fit import score_candidate_job_fit
+from talent_matching.llm.operations.select_final_shortlist import select_final_shortlist
+from talent_matching.matchmaking.location_filter import (
+    candidate_matches_location,
+    parse_job_preferred_locations,
+)
 from talent_matching.matchmaking.scoring import (
     SENIORITY_MAX_DEDUCTION,
     compensation_fit,
@@ -43,8 +49,6 @@ from talent_matching.matchmaking.scoring import (
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_job_to_airtable_fields
 from talent_matching.utils.dagster_async import run_with_interrupt_check
-from talent_matching.llm.operations.score_candidate_job_fit import score_candidate_job_fit
-from talent_matching.llm.operations.select_final_shortlist import select_final_shortlist
 
 # Dynamic partition definition for jobs (one partition per Airtable job record ID)
 job_partitions = DynamicPartitionsDefinition(name="jobs")
@@ -344,6 +348,66 @@ def airtable_job_sync(
     return {"airtable_record_id": record_id, "synced": True, "fields": fields}
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# LOCATION PRE-FILTER: reduce candidate pool before scoring
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@asset(
+    partitions_def=job_partitions,
+    ins={
+        "raw_jobs": AssetIn(),
+        "normalized_candidates": AssetIn(
+            key=["normalized_candidates"],
+            partition_mapping=AllPartitionMapping(),
+        ),
+        "normalized_jobs": AssetIn(),
+    },
+    description="Candidates that pass the job's Preferred Location filter (or all if Global/No hard requirements)",
+    group_name="matching",
+)
+def location_prefiltered_candidates(
+    context: AssetExecutionContext,
+    raw_jobs: dict[str, Any],
+    normalized_candidates: Any,
+    normalized_jobs: Any,
+) -> list[dict[str, Any]]:
+    """Filter candidates by job Preferred Location before scoring.
+
+    Uses location_raw from raw_jobs. If Global/No hard requirements or empty → return all.
+    Else filter normalized_candidates with candidate_matches_location.
+    """
+
+    def _to_candidate_list(x: Any) -> list[dict[str, Any]]:
+        if x is None:
+            return []
+        if isinstance(x, dict):
+            out = []
+            for v in x.values():
+                if isinstance(v, dict) and v:
+                    out.append(v)
+                elif isinstance(v, list):
+                    out.extend(i for i in v if isinstance(i, dict))
+            return out
+        if isinstance(x, list):
+            return [item for item in x if isinstance(item, dict)]
+        return [x] if isinstance(x, dict) else []
+
+    candidates = _to_candidate_list(normalized_candidates)
+    location_raw = (raw_jobs.get("location_raw") or "").strip() or None
+
+    job_locations = parse_job_preferred_locations(location_raw)
+    if job_locations is None:
+        context.log.info("No location filter (Global/empty); passing all candidates")
+        return candidates
+
+    filtered = [c for c in candidates if candidate_matches_location(c, job_locations)]
+    context.log.info(
+        f"Location filter '{location_raw}': {len(filtered)}/{len(candidates)} candidates pass"
+    )
+    return filtered
+
+
 # Notion formula weights: role 40%, domain 35%, culture 25%
 ROLE_WEIGHT = 0.4
 DOMAIN_WEIGHT = 0.35
@@ -366,10 +430,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
 @asset(
     partitions_def=job_partitions,
     ins={
-        "normalized_candidates": AssetIn(
-            key=["normalized_candidates"],
-            partition_mapping=AllPartitionMapping(),
-        ),
+        "location_prefiltered_candidates": AssetIn(),
         "candidate_vectors": AssetIn(
             key=["candidate_vectors"],
             partition_mapping=AllPartitionMapping(),
@@ -379,7 +440,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.6.1",  # refactored to use shared matchmaking.scoring
+    code_version="2.7.0",  # location pre-filter: use location_prefiltered_candidates
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     metadata={
@@ -393,7 +454,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
 )
 def matches(
     context: AssetExecutionContext,
-    normalized_candidates: Any,
+    location_prefiltered_candidates: list[dict[str, Any]],
     candidate_vectors: Any,
     normalized_jobs: Any,
     job_vectors: Any,
@@ -444,7 +505,7 @@ def matches(
             return flat
         return [x] if isinstance(x, dict) else []
 
-    normalized_candidates = _to_candidate_list(normalized_candidates)
+    normalized_candidates = location_prefiltered_candidates or []
     candidate_vectors = _to_vector_list(candidate_vectors)
     if not normalized_jobs or not normalized_candidates:
         context.log.info("No jobs or candidates; skipping")
@@ -799,7 +860,7 @@ def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
     group_name="matching",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="1.0.0",
+    code_version="1.1.0",
     metadata={"table": "matches"},
     op_tags={"dagster/concurrency_key": "openrouter_api"},
 )
@@ -835,8 +896,12 @@ def llm_refined_shortlist(
         run_id=context.run_id,
         asset_key="llm_refined_shortlist",
         partition_key=context.partition_key,
-        code_version="1.0.0",
+        code_version="1.1.0",
     )
+
+    non_negotiables = (raw_job.get("non_negotiables") or "").strip() or None
+    nice_to_have = (raw_job.get("nice_to_have") or "").strip() or None
+    location_raw = (raw_job.get("location_raw") or "").strip() or None
 
     scored: list[dict[str, Any]] = []
     for i, m in enumerate(matches):
@@ -854,6 +919,9 @@ def llm_refined_shortlist(
                 job_description,
                 job,
                 must_haves,
+                non_negotiables=non_negotiables,
+                nice_to_have=nice_to_have,
+                location_raw=location_raw,
             )
 
         result = asyncio.run(run_with_interrupt_check(context, _score_one()))

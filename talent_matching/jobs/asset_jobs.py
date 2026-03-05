@@ -19,6 +19,7 @@ from talent_matching.assets.jobs import (
     job_partitions,
     job_vectors,
     llm_refined_shortlist,
+    location_prefiltered_candidates,
     matches,
     normalized_jobs,
     raw_jobs,
@@ -137,7 +138,16 @@ ats_matchmaking_pipeline_job = define_asset_job(
         "Writes top 15 candidates as linked chips to 'AI PROPOSTED CANDIDATES' and "
         "sets Job Status to 'Matchmaking Done'."
     ),
-    selection=[normalized_jobs, job_vectors, matches, llm_refined_shortlist, upload_matches_to_ats],
+    selection=[
+        airtable_jobs,
+        raw_jobs,
+        normalized_jobs,
+        job_vectors,
+        location_prefiltered_candidates,
+        matches,
+        llm_refined_shortlist,
+        upload_matches_to_ats,
+    ],
     partitions_def=job_partitions,
     op_retry_policy=openrouter_retry_policy,
     tags={"dagster/concurrency_limit": "matchmaking"},
