@@ -110,7 +110,7 @@ def _ingest_raw_job(
     mapped["job_description"] = _resolve_notion_description(raw_description, link, notion_resource)
 
     if not mapped["job_description"] or mapped["job_description"] == "(No description provided)":
-        log.warning(f"ATS record {record_id} has no job description — skipping")
+        log.warning(f"[ats_matchmaking_sensor] record_id={record_id} No job description; skipping")
         return None
 
     session = get_session()
@@ -158,8 +158,8 @@ def _ingest_raw_job(
     session.close()
 
     log.info(
-        f"Ingested ATS raw job {record_id}: "
-        f"{mapped.get('job_title', 'No title')} (desc: {len(mapped['job_description'])} chars)"
+        f"[ats_matchmaking_sensor] Ingested raw job {record_id}: "
+        f"{mapped.get('job_title', 'No title')} (desc={len(mapped['job_description'])} chars)"
     )
     return (record_id, mapped)
 
@@ -204,7 +204,10 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
             f"{len(records)} ATS jobs at 'Matchmaking Ready' but all already triggered"
         )
 
-    context.log.info(f"Found {len(new_records)} new ATS jobs ready for matchmaking")
+    context.log.info(
+        f"[ats_matchmaking_sensor] Found {len(new_records)} new jobs ready "
+        f"(total at Matchmaking Ready: {len(records)}, already triggered: {len(triggered_map)})"
+    )
 
     existing_partitions = set(
         context.instance.get_dynamic_partitions(partitions_def_name=job_partitions.name)
@@ -217,7 +220,7 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
             continue
 
         title = (record.get("fields", {}).get("Open Position (Job Title)") or "Untitled")[:80]
-        context.log.info(f"Processing ATS job: {record_id} — {title}")
+        context.log.info(f"[ats_matchmaking_sensor] Processing job: {record_id} — {title}")
 
         result = _ingest_raw_job(record, notion, context.log)
         if not result:
@@ -228,7 +231,7 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
                 partitions_def_name=job_partitions.name,
                 partition_keys=[record_id],
             )
-            context.log.info(f"Created partition for {record_id}")
+            context.log.info(f"[ats_matchmaking_sensor] Created partition for {record_id}")
 
         triggered_map[record_id] = now_iso
 

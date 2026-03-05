@@ -61,7 +61,7 @@ def airtable_candidates(context: AssetExecutionContext) -> Output[dict[str, Any]
         Output with the candidate data and a DataVersion for staleness tracking.
     """
     record_id = context.partition_key
-    context.log.info(f"Fetching candidate record: {record_id}")
+    context.log.info(f"[airtable_candidates] record_id={record_id} Fetching from Airtable")
 
     airtable = context.resources.airtable
     candidate = airtable.fetch_record_by_id(record_id)
@@ -70,7 +70,8 @@ def airtable_candidates(context: AssetExecutionContext) -> Output[dict[str, Any]
     data_version = candidate.pop("_data_version", None)
 
     context.log.info(
-        f"Fetched candidate: {candidate.get('full_name', 'Unknown')} (version: {data_version})"
+        f"[airtable_candidates] record_id={record_id} Fetched: {candidate.get('full_name', 'Unknown')} "
+        f"(version={data_version})"
     )
 
     return Output(
@@ -110,7 +111,7 @@ def raw_candidates(
     """
     record_id = context.partition_key
     openrouter = context.resources.openrouter
-    context.log.info(f"Processing raw candidate: {record_id}")
+    context.log.info(f"[raw_candidates] record_id={record_id} Processing")
 
     # Preserve original Airtable cv_text
     cv_text_airtable = airtable_candidates.get("cv_text")
@@ -126,7 +127,7 @@ def raw_candidates(
     cv_url = airtable_candidates.get("cv_url")
 
     if cv_url:
-        context.log.info(f"Extracting text from PDF: {cv_url[:60]}...")
+        context.log.info(f"[raw_candidates] record_id={record_id} Extracting PDF: {cv_url[:60]}...")
 
         # Set context for cost tracking
         openrouter.set_context(
@@ -151,17 +152,21 @@ def raw_candidates(
 
         if result.failed:
             cv_extraction_method = "failed"
-            context.log.warning(f"PDF extraction failed for {record_id}: {result.error}")
+            context.log.warning(
+                f"[raw_candidates] record_id={record_id} PDF extraction failed: {result.error}"
+            )
         elif result.text and len(result.text.strip()) > 50:
             cv_text_pdf = result.text
             cv_extraction_method = "pdf_text"
             context.log.info(
-                f"PDF extraction successful: {len(cv_text_pdf)} chars, "
+                f"[raw_candidates] record_id={record_id} PDF extracted: {len(cv_text_pdf)} chars, "
                 f"${result.cost_usd:.6f}, {result.pages_processed} pages"
             )
         else:
             cv_extraction_method = "failed"
-            context.log.warning(f"PDF extraction returned empty/short text for {record_id}")
+            context.log.warning(
+                f"[raw_candidates] record_id={record_id} PDF extraction returned empty/short text"
+            )
 
         extraction_metadata: dict[str, Any] = {
             "cv_extraction_method": cv_extraction_method,
@@ -175,7 +180,7 @@ def raw_candidates(
             extraction_metadata["cv_extraction_error"] = result.error
         context.add_output_metadata(extraction_metadata)
     else:
-        context.log.info("No cv_url available for PDF extraction")
+        context.log.info(f"[raw_candidates] record_id={record_id} No cv_url; skipping PDF extraction")
 
     # Build raw data for storage
     raw_data = {
@@ -201,8 +206,8 @@ def raw_candidates(
         sources.append("pdf")
 
     context.log.info(
-        f"Raw candidate ready: {raw_data.get('full_name', 'Unknown')} "
-        f"(sources: {', '.join(sources) if sources else 'none'})"
+        f"[raw_candidates] record_id={record_id} Ready: {raw_data.get('full_name', 'Unknown')} "
+        f"(sources={', '.join(sources) if sources else 'none'})"
     )
 
     return raw_data
@@ -290,7 +295,9 @@ def normalized_candidates(
     has_pdf = cv_text_pdf and len(cv_text_pdf.strip()) > 50
 
     if not has_airtable and not has_pdf:
-        context.log.warning(f"No CV data available for candidate: {record_id}")
+        context.log.warning(
+            f"[normalized_candidates] record_id={record_id} No CV data; skipping LLM normalization"
+        )
         context.add_output_metadata(
             {
                 "llm_cost_usd": 0.0,
@@ -322,7 +329,7 @@ def normalized_candidates(
     if has_pdf:
         sources.append("pdf")
     context.log.info(
-        f"Normalizing candidate {record_id} via OpenRouter API (sources: {', '.join(sources)})"
+        f"[normalized_candidates] record_id={record_id} Normalizing via LLM (sources={', '.join(sources)})"
     )
 
     # Fail fast if API key is not configured
@@ -358,9 +365,8 @@ def normalized_candidates(
     )
 
     context.log.info(
-        f"Normalized candidate: {result.data.get('name', 'Unknown')} "
-        f"(sources: {', '.join(sources)}, cost: ${result.cost_usd:.6f}, "
-        f"tokens: {result.total_tokens})"
+        f"[normalized_candidates] record_id={record_id} Done: {result.data.get('name', 'Unknown')} "
+        f"(model={result.model}, cost=${result.cost_usd:.6f}, tokens={result.total_tokens})"
     )
 
     return {
@@ -511,7 +517,7 @@ def candidate_vectors(
             texts_to_embed[f"project_{i}"] = project_text
 
     context.log.info(
-        f"Generating {len(texts_to_embed)} embeddings for candidate: {record_id} "
+        f"[candidate_vectors] record_id={record_id} Generating {len(texts_to_embed)} embeddings "
         f"(5 narratives, {len(skills)} skills, {len(experiences)} positions, {len(projects)} projects)"
     )
 
@@ -539,8 +545,8 @@ def candidate_vectors(
     )
 
     context.log.info(
-        f"Generated {len(result.embeddings)} vectors for candidate: {record_id} "
-        f"(cost: ${result.cost_usd:.6f}, dims: {result.dimensions}, model: {result.model})"
+        f"[candidate_vectors] record_id={record_id} Generated {len(result.embeddings)} vectors "
+        f"(cost=${result.cost_usd:.6f}, dims={result.dimensions}, model={result.model})"
     )
 
     # Build output records
@@ -588,24 +594,35 @@ def candidate_github_commit_history(
     candidate_id = normalized_candidates.get("id")  # from loaded NormalizedCandidate
 
     if not github_handle or not str(github_handle).strip():
-        context.log.info(f"No github_handle for {record_id}; skipping commit history")
+        context.log.info(
+            f"[candidate_github_commit_history] record_id={record_id} No github_handle; skipping"
+        )
         return None
 
     if not candidate_id:
-        context.log.warning(f"No normalized candidate id for partition {record_id}")
+        context.log.warning(
+            f"[candidate_github_commit_history] record_id={record_id} No normalized id; skipping"
+        )
         return None
 
     github = context.resources.github
-    context.log.info(f"Extracting commit history for {github_handle} ({record_id})")
+    context.log.info(
+        f"[candidate_github_commit_history] record_id={record_id} Extracting commits for {github_handle}"
+    )
 
     result = clone_and_extract_commits(username=github_handle, github=github, max_repos=15)
 
     total_commits = sum(len(r.get("commits", [])) for r in result.get("repos", []))
+    repos_count = len(result.get("repos", []))
     context.add_output_metadata(
         {
-            "repos_cloned": len(result.get("repos", [])),
+            "repos_cloned": repos_count,
             "total_commits": total_commits,
         }
+    )
+    context.log.info(
+        f"[candidate_github_commit_history] record_id={record_id} Done: {repos_count} repos, "
+        f"{total_commits} commits"
     )
 
     return {
@@ -646,7 +663,9 @@ def candidate_skill_verification(
     github_handle = normalized_candidates.get("github_handle")
 
     if not candidate_id:
-        context.log.warning(f"No normalized candidate id for partition {record_id}")
+        context.log.warning(
+            f"[candidate_skill_verification] record_id={record_id} No normalized id; skipping"
+        )
         return {
             "candidate_id": None,
             "airtable_record_id": record_id,
@@ -656,7 +675,9 @@ def candidate_skill_verification(
         }
 
     if not github_handle or not str(github_handle).strip():
-        context.log.info(f"No github_handle for {record_id}; skipping skill verification")
+        context.log.info(
+            f"[candidate_skill_verification] record_id={record_id} No github_handle; skipping"
+        )
         return {
             "candidate_id": str(candidate_id),
             "airtable_record_id": record_id,
@@ -666,7 +687,9 @@ def candidate_skill_verification(
         }
 
     if not candidate_github_commit_history:
-        context.log.info(f"No commit history for {record_id}; skipping skill verification")
+        context.log.info(
+            f"[candidate_skill_verification] record_id={record_id} No commit history; skipping"
+        )
         return {
             "candidate_id": str(candidate_id),
             "airtable_record_id": record_id,
@@ -677,7 +700,7 @@ def candidate_skill_verification(
 
     skills = (normalized_candidates.get("normalized_json") or {}).get("skills", [])
     if not skills:
-        context.log.info(f"No skills for {record_id}; skipping skill verification")
+        context.log.info(f"[candidate_skill_verification] record_id={record_id} No skills; skipping")
         return {
             "candidate_id": str(candidate_id),
             "airtable_record_id": record_id,
@@ -790,6 +813,11 @@ def candidate_skill_verification(
             "skill_verification_score": score,
         }
     )
+    score_str = f"{score:.2f}" if score is not None else "N/A"
+    context.log.info(
+        f"[candidate_skill_verification] record_id={record_id} Done: {verified_count}/{total_verifiable} "
+        f"skills verified (score={score_str})"
+    )
 
     return {
         "candidate_id": str(candidate_id),
@@ -821,11 +849,15 @@ def candidate_role_fitness(
     record_id = context.partition_key
     candidate_id = normalized_candidates.get("id")
     if not candidate_id:
-        context.log.warning(f"No normalized candidate id for partition {record_id}")
+        context.log.warning(
+            f"[candidate_role_fitness] record_id={record_id} No normalized id; skipping"
+        )
         return []
     roles = normalized_candidates.get("desired_job_categories") or []
     if not roles:
-        context.log.info(f"No desired_job_categories for {record_id}; skipping role fitness")
+        context.log.info(
+            f"[candidate_role_fitness] record_id={record_id} No desired_job_categories; skipping"
+        )
         return []
 
     # Build a compact profile for the LLM (skills, experience, seniority)
@@ -859,7 +891,9 @@ def candidate_role_fitness(
                 "algorithm_version": ROLE_FITNESS_ALGORITHM_VERSION,
             }
         )
-    context.log.info(f"Computed {len(results)} role fitness scores for {record_id}")
+    context.log.info(
+        f"[candidate_role_fitness] record_id={record_id} Computed {len(results)} role fitness scores"
+    )
     return results
 
 
@@ -886,14 +920,16 @@ def airtable_candidate_sync(
     candidate = matchmaking.get_normalized_candidate_by_airtable_record_id(record_id)
     if not candidate:
         context.log.warning(
-            f"No normalized_candidates row for airtable_record_id={record_id}; skip sync"
+            f"[airtable_candidate_sync] record_id={record_id} No normalized_candidates row; skipping"
         )
         return {"airtable_record_id": record_id, "synced": False, "skipped": True, "fields": {}}
     fields = normalized_candidate_to_airtable_fields(candidate)
     if not fields:
-        context.log.info(f"No fields to sync for {record_id}")
+        context.log.info(f"[airtable_candidate_sync] record_id={record_id} No fields to sync")
         return {"airtable_record_id": record_id, "synced": False, "fields": {}}
     airtable = context.resources.airtable
     airtable.update_record(record_id, fields)
-    context.log.info(f"Synced {record_id}: {len(fields)} (N) columns")
+    context.log.info(
+        f"[airtable_candidate_sync] record_id={record_id} Synced {len(fields)} (N) columns"
+    )
     return {"airtable_record_id": record_id, "synced": True, "fields": fields}

@@ -67,14 +67,16 @@ job_partitions = DynamicPartitionsDefinition(name="jobs")
 def airtable_jobs(context: AssetExecutionContext) -> Output[dict[str, Any]]:
     """Fetch a single job row from Airtable by partition key (Airtable record ID)."""
     record_id = context.partition_key
-    context.log.info(f"Fetching job record: {record_id}")
+    context.log.info(f"[airtable_jobs] record_id={record_id} Fetching from Airtable")
 
     airtable = context.resources.airtable_jobs
     job_record = airtable.fetch_record_by_id(record_id)
 
     data_version = job_record.pop("_data_version", None)
+    company = job_record.get("company_name", "Unknown")
+    title = job_record.get("job_title_raw", "N/A")
     context.log.info(
-        f"Fetched job: {job_record.get('company_name', 'Unknown')} / {job_record.get('job_title_raw', 'N/A')}"
+        f"[airtable_jobs] record_id={record_id} Fetched: {company} / {title} (version={data_version})"
     )
 
     return Output(
@@ -135,8 +137,8 @@ def raw_jobs(
         link = existing_raw.source_url
         job_description = base["job_description"]
         context.log.info(
-            f"Using existing RawJob for {record_id} (source={existing_raw.source}, "
-            f"desc: {len(job_description)} chars)"
+            f"[raw_jobs] record_id={record_id} Using existing RawJob (source={existing_raw.source}, "
+            f"desc={len(job_description)} chars)"
         )
     else:
         link = airtable_jobs.get("job_description_link")
@@ -166,7 +168,7 @@ def raw_jobs(
         and _is_notion_url(link)
         and (not (job_description or "").strip() or job_description == "(No description provided)")
     ):
-        context.log.info(f"Fetching Notion page for job: {link[:60]}...")
+        context.log.info(f"[raw_jobs] record_id={record_id} Fetching Notion page: {link[:60]}...")
         job_description = (
             notion.fetch_page_content(link) or job_description or "(No content from Notion)"
         )
@@ -179,11 +181,14 @@ def raw_jobs(
     ):
         base["location_raw"] = existing_raw.location_raw
         context.log.info(
-            f"Using existing location_raw for {record_id}: {(base['location_raw'] or '')[:60]}..."
+            f"[raw_jobs] record_id={record_id} Using existing location_raw: {(base['location_raw'] or '')[:60]}..."
         )
 
+    desc_len = len(base["job_description"])
     context.log.info(
-        f"Prepared raw job {record_id} (description length: {len(base['job_description'])})"
+        f"[raw_jobs] record_id={record_id} Ready: desc={desc_len} chars, "
+        f"non_negotiables={bool((base.get('non_negotiables') or '').strip())}, "
+        f"location={bool((base.get('location_raw') or '').strip())}"
     )
     return base
 
@@ -216,7 +221,9 @@ def normalized_jobs(
     record_id = context.partition_key
     job_description = (raw_jobs.get("job_description") or "").strip()
     if not job_description or len(job_description) < 50:
-        context.log.warning(f"No meaningful job description for {record_id}; skipping LLM")
+        context.log.warning(
+            f"[normalized_jobs] record_id={record_id} Skipping LLM: desc too short ({len(job_description or '')} chars)"
+        )
         return {
             "airtable_record_id": record_id,
             "title": raw_jobs.get("job_title") or "Unknown",
@@ -254,6 +261,10 @@ def normalized_jobs(
             "llm_tokens_output": result.output_tokens,
             "llm_model": result.model,
         }
+    )
+    context.log.info(
+        f"[normalized_jobs] record_id={record_id} Normalized: model={result.model}, "
+        f"cost=${result.cost_usd:.6f}, tokens_in={result.input_tokens}, tokens_out={result.output_tokens}"
     )
     payload = {
         "airtable_record_id": record_id,
@@ -348,6 +359,7 @@ def job_vectors(
         # Legacy string-only entries: no expected_capability to embed
 
     result = asyncio.run(embed_text(openrouter, texts_to_embed))
+    skill_count = len(vector_types) - len(JOB_NARRATIVE_VECTOR_TYPES)
     context.add_output_metadata(
         {
             "embedding_cost_usd": result.cost_usd,
@@ -355,8 +367,12 @@ def job_vectors(
             "embedding_dimensions": result.dimensions,
             "embedding_model": result.model,
             "vectors_generated": len(result.embeddings),
-            "skill_vectors": len(vector_types) - len(JOB_NARRATIVE_VECTOR_TYPES),
+            "skill_vectors": skill_count,
         }
+    )
+    context.log.info(
+        f"[job_vectors] record_id={record_id} Generated {len(result.embeddings)} vectors "
+        f"(6 narrative + {skill_count} skill), cost=${result.cost_usd:.6f}"
     )
 
     vectors = []
@@ -392,18 +408,20 @@ def airtable_job_sync(
     matchmaking = context.resources.matchmaking
     job = matchmaking.get_normalized_job_by_airtable_record_id(record_id)
     if not job:
-        context.log.warning(f"No normalized_jobs row for airtable_record_id={record_id}; skip sync")
+        context.log.warning(
+            f"[airtable_job_sync] record_id={record_id} No normalized_jobs row; skipping sync"
+        )
         return {"airtable_record_id": record_id, "synced": False, "skipped": True, "fields": {}}
 
     fields = normalized_job_to_airtable_fields(job)
 
     if not fields:
-        context.log.info(f"No fields to sync for job {record_id}")
+        context.log.info(f"[airtable_job_sync] record_id={record_id} No fields to sync")
         return {"airtable_record_id": record_id, "synced": False, "fields": {}}
 
     airtable = context.resources.airtable_jobs
     airtable.update_record(record_id, fields)
-    context.log.info(f"Synced {record_id}: {len(fields)} (N) columns")
+    context.log.info(f"[airtable_job_sync] record_id={record_id} Synced {len(fields)} (N) columns")
     return {"airtable_record_id": record_id, "synced": True, "fields": fields}
 
 
@@ -460,20 +478,27 @@ def location_prefiltered_candidates(
         c for c in candidates if (c.get("job_status") or "").strip() != TALENT_JOB_STATUS_FRAUD
     ]
     fraud_excluded = len(candidates) - len(eligible)
+    record_id = context.partition_key
     if fraud_excluded:
         context.log.info(
-            f"Job Status filter: {fraud_excluded} Fraud excluded, {len(eligible)} eligible"
+            f"[location_prefiltered_candidates] record_id={record_id} Job Status filter: "
+            f"{fraud_excluded} Fraud excluded, {len(eligible)} eligible"
         )
 
     location_raw = (raw_jobs.get("location_raw") or "").strip() or None
     job_locations = parse_job_preferred_locations(location_raw)
     if job_locations is None:
-        context.log.info("No location filter (Global/empty); passing all eligible candidates")
+        context.log.info(
+            f"[location_prefiltered_candidates] record_id={record_id} No location filter; "
+            f"passing all {len(eligible)} eligible candidates"
+        )
         return eligible
 
     filtered = [c for c in eligible if candidate_matches_location(c, job_locations)]
+    loc_preview = (location_raw or "")[:50] + ("..." if len(location_raw or "") > 50 else "")
     context.log.info(
-        f"Location filter '{location_raw}': {len(filtered)}/{len(eligible)} candidates pass"
+        f"[location_prefiltered_candidates] record_id={record_id} Location filter "
+        f"'{loc_preview}': {len(filtered)}/{len(eligible)} candidates pass"
     )
     return filtered
 
@@ -534,8 +559,9 @@ def matches(
     Optional (deferred): pre-filter to candidates with candidate_role_fitness.fitness_score >= 60
     for a role matching the job; see plan matchmaking_scoring_and_shortlist.
     """
+    record_id = context.partition_key
     context.log.info(
-        f"Computing matches for job partition {context.partition_key} (vector + skill penalty, top 30 per job)"
+        f"[matches] record_id={record_id} Computing matches (vector+skill, top {TOP_N_PER_JOB} per job)"
     )
 
     # AllPartitionMapping yields dict[partition_key, value]; value per partition is what IO manager returned (dict or list)
@@ -578,7 +604,10 @@ def matches(
     normalized_candidates = location_prefiltered_candidates or []
     candidate_vectors = _to_vector_list(candidate_vectors)
     if not normalized_jobs or not normalized_candidates:
-        context.log.info("No jobs or candidates; skipping")
+        context.log.info(
+            f"[matches] record_id={record_id} Skipping: jobs={bool(normalized_jobs)}, "
+            f"candidates={len(normalized_candidates)}"
+        )
         return []
 
     # Normalize job/vector inputs (single partition: dict or list)
@@ -894,7 +923,19 @@ def matches(
                 }
             )
 
-    context.log.info(f"Computed {len(match_results)} matches ({TOP_N_PER_JOB} per job)")
+    if match_results:
+        avg_score = sum(m["match_score"] for m in match_results) / len(match_results)
+        top_score = max(m["match_score"] for m in match_results)
+        context.log.info(
+            f"[matches] record_id={record_id} Computed {len(match_results)} matches: "
+            f"avg_score={avg_score:.3f}, top_score={top_score:.3f}, "
+            f"candidate_pool={len(normalized_candidates)}"
+        )
+    else:
+        context.log.info(
+            f"[matches] record_id={record_id} No matches (candidate_pool={len(normalized_candidates)}, "
+            f"skill_min_threshold={SKILL_MIN_THRESHOLD})"
+        )
     return match_results
 
 
@@ -942,8 +983,9 @@ def llm_refined_shortlist(
     raw_jobs: Any,
 ) -> list[dict[str, Any]]:
     """Score each of 30 matches with advanced AI, select final max 15 who fulfill all must-haves."""
+    record_id = context.partition_key
     if not matches:
-        context.log.info("No matches to refine; skipping")
+        context.log.info(f"[llm_refined_shortlist] record_id={record_id} No matches to refine; skipping")
         return []
 
     candidates_list = _to_candidate_list_for_shortlist(normalized_candidates)
@@ -978,7 +1020,9 @@ def llm_refined_shortlist(
         cand_id = str(m.get("candidate_id", ""))
         candidate = cand_by_id.get(cand_id)
         if not candidate:
-            context.log.warning(f"Candidate {cand_id} not found in normalized_candidates; skipping")
+            context.log.warning(
+            f"[llm_refined_shortlist] record_id={record_id} Candidate {cand_id} not in normalized_candidates; skipping"
+        )
             continue
         cand_for_llm: dict[str, Any] = candidate
 
@@ -1007,10 +1051,12 @@ def llm_refined_shortlist(
                 "_result": result,
             }
         )
-        context.log.info(
-            f"Scored {i + 1}/{len(matches)}: {cand_for_llm.get('full_name', '?')} "
-            f"fit={result.get('fit_score')} fulfills_must_haves={result.get('fulfills_all_must_haves')}"
-        )
+        if (i + 1) % 5 == 0 or i + 1 == len(matches):
+            fulfills = sum(1 for s in scored if s.get("fulfills_all_must_haves"))
+            context.log.info(
+                f"[llm_refined_shortlist] record_id={record_id} Progress {i + 1}/{len(matches)} scored, "
+                f"{fulfills} fulfill must-haves"
+            )
 
     async def _select() -> dict[str, Any]:
         return await select_final_shortlist(
@@ -1050,9 +1096,10 @@ def llm_refined_shortlist(
             }
         )
 
+    fulfills_count = sum(1 for s in scored if s.get("fulfills_all_must_haves"))
     context.log.info(
-        f"Refined shortlist: {len(final)} candidates (from {len(matches)} scored, "
-        f"{len(selected_ids)} selected by LLM)"
+        f"[llm_refined_shortlist] record_id={record_id} Done: {len(final)} final (from {len(matches)} scored, "
+        f"{len(selected_ids)} selected by LLM, {fulfills_count} fulfilled must-haves)"
     )
     return final
 
@@ -1084,7 +1131,9 @@ def upload_matches_to_ats(
     matches = llm_refined_shortlist
     record_id = context.partition_key
     ats = context.resources.airtable_ats
-    context.log.info(f"Uploading {len(matches)} matches to ATS for job {record_id}")
+    context.log.info(
+        f"[upload_matches_to_ats] record_id={record_id} Uploading {len(matches)} matches to ATS"
+    )
 
     current_record = ats.fetch_record_by_id(record_id)
     current_status = current_record.get("fields", {}).get(ATS_JOB_STATUS_FIELD)
@@ -1092,18 +1141,20 @@ def upload_matches_to_ats(
 
     if not should_flip_status:
         context.log.info(
-            f"Job Status is '{current_status}', not 'Matchmaking Ready' "
-            f"— will upload matches but skip status change"
+            f"[upload_matches_to_ats] record_id={record_id} Job Status='{current_status}' "
+            f"(not Matchmaking Ready); uploading matches but skipping status change"
         )
 
     if not matches:
         if should_flip_status:
             context.log.warning(
-                f"No matches for {record_id} — setting status to Matchmaking Done anyway"
+                f"[upload_matches_to_ats] record_id={record_id} No matches; setting status to Matchmaking Done anyway"
             )
             ats.update_record(record_id, {ATS_JOB_STATUS_FIELD: ATS_MATCHMAKING_DONE_STATUS})
         else:
-            context.log.warning(f"No matches for {record_id} and status not flippable — skipping")
+            context.log.warning(
+                f"[upload_matches_to_ats] record_id={record_id} No matches and status not flippable; skipping"
+            )
         return
 
     candidate_norm_ids = [m["candidate_id"] for m in matches]
@@ -1128,7 +1179,8 @@ def upload_matches_to_ats(
             linked_record_ids.append(at_id)
 
     context.log.info(
-        f"Mapped {len(linked_record_ids)}/{len(matches)} candidates to Airtable record IDs"
+        f"[upload_matches_to_ats] record_id={record_id} Mapped {len(linked_record_ids)}/{len(matches)} "
+        f"candidates to Airtable record IDs"
     )
 
     fields: dict[str, Any] = {}
@@ -1158,7 +1210,9 @@ def upload_matches_to_ats(
             if norm_to_airtable.get(m["candidate_id"])
         ]
         ats.replace_matches_for_job(record_id, matches_for_table)
-        context.log.info(f"Wrote {len(matches_for_table)} records to Matches table")
+        context.log.info(
+            f"[upload_matches_to_ats] record_id={record_id} Wrote {len(matches_for_table)} records to Matches table"
+        )
 
     status_msg = (
         f"set Job Status to '{ATS_MATCHMAKING_DONE_STATUS}'"
@@ -1166,6 +1220,6 @@ def upload_matches_to_ats(
         else "Job Status unchanged"
     )
     context.log.info(
-        f"Uploaded {len(linked_record_ids)} candidate chips to '{ATS_AI_PROPOSED_FIELD}' "
-        f"({status_msg}) for {record_id}"
+        f"[upload_matches_to_ats] record_id={record_id} Done: {len(linked_record_ids)} chips to "
+        f"'{ATS_AI_PROPOSED_FIELD}', {status_msg}"
     )
