@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from talent_matching.resources.openrouter import OpenRouterResource
 
 # Bump this version when the prompt changes
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 # Use a more capable model for reasoning/scoring tasks
 DEFAULT_MODEL = "openai/gpt-4o"
@@ -31,7 +31,12 @@ Return a single JSON object with this structure:
   "fulfills_all_must_haves": <true or false>
 }
 
-CRITICAL: Set fulfills_all_must_haves to true ONLY if the candidate fulfills EVERY must-have requirement (skills, experience, domain, etc.). If ANY must-have is missing or insufficient, set it to false.
+CRITICAL: Set fulfills_all_must_haves to true ONLY if the candidate fulfills EVERY must-have requirement. Must-haves include:
+- All skills listed in MUST-HAVE REQUIREMENTS
+- All criteria in RECRUITER NON-NEGOTIABLES (when provided) — e.g. location/region, years of experience, domain, or any other hard filter the recruiter specified
+- Location/region when the job has required locations or timezone requirements — candidates outside the required region must be excluded
+
+If ANY must-have is missing or insufficient, set fulfills_all_must_haves to false.
 
 Scoring guidelines:
 - 9-10: Exceptional fit, exceeds all requirements
@@ -47,6 +52,10 @@ async def score_candidate_job_fit(
     job_description: str,
     normalized_job: dict[str, Any],
     must_have_requirements: list[dict[str, Any]],
+    *,
+    non_negotiables: str | None = None,
+    nice_to_have: str | None = None,
+    location_raw: str | None = None,
 ) -> dict[str, Any]:
     """Score a candidate against a job (1-10, pros, cons, fulfills_all_must_haves).
 
@@ -57,6 +66,9 @@ async def score_candidate_job_fit(
         normalized_job: Normalized job dict (requirements, narratives, etc.)
         must_have_requirements: List of must-have skill/requirement dicts from get_job_required_skills
             (skill_name, requirement_type, min_years, expected_capability)
+        non_negotiables: Recruiter-provided hard requirements from Airtable (Non Negotiables column)
+        nice_to_have: Recruiter-provided nice-to-have preferences from Airtable (Nice-to-have column)
+        location_raw: Recruiter-specified required/preferred locations from Airtable
 
     Returns:
         Dict with fit_score, pros, cons, fulfills_all_must_haves
@@ -72,6 +84,22 @@ async def score_candidate_job_fit(
         must_haves_parts.append(part)
     must_haves_text = "\n".join(must_haves_parts)
 
+    recruiter_parts: list[str] = []
+    if (non_negotiables or "").strip():
+        recruiter_parts.append(
+            f"RECRUITER NON-NEGOTIABLES (hard filter — candidate must fulfill ALL of these):\n{non_negotiables.strip()}"
+        )
+    if (location_raw or "").strip():
+        recruiter_parts.append(
+            f"REQUIRED LOCATION/REGION:\n{location_raw.strip()}\n"
+            "Candidate must be located in or able to work from these regions. Exclude candidates outside."
+        )
+    if (nice_to_have or "").strip():
+        recruiter_parts.append(
+            f"NICE-TO-HAVES (preferred but not required):\n{nice_to_have.strip()}"
+        )
+    recruiter_section = "\n\n".join(recruiter_parts) if recruiter_parts else ""
+
     user_content = f"""Candidate Profile (full, normalized):
 {json.dumps(normalized_candidate, indent=2, default=str)}
 
@@ -81,8 +109,9 @@ Job Description (full text):
 Normalized Job Requirements:
 {json.dumps(normalized_job, indent=2, default=str)}
 
-MUST-HAVE REQUIREMENTS (candidate must fulfill ALL of these):
+MUST-HAVE SKILLS (candidate must fulfill ALL of these):
 {must_haves_text if must_haves_text else "(None specified)"}
+{recruiter_section + chr(10) if recruiter_section else ""}
 
 Evaluate the candidate against the job. Return JSON with fit_score (1-10), pros, cons, and fulfills_all_must_haves."""
 
