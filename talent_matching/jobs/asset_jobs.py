@@ -139,6 +139,7 @@ ats_matchmaking_pipeline_job = define_asset_job(
         raw_jobs,
         normalized_jobs,
         job_vectors,
+        airtable_job_sync,
         location_prefiltered_candidates,
         matches,
         llm_refined_shortlist,
