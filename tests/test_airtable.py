@@ -206,6 +206,21 @@ class TestMapAirtableRowToRawJob:
         assert result["projected_salary"] == "$150k–$200k"
         assert result["location_raw"] == "Remote, Europe"
 
+    def test_maps_preferred_location_with_trailing_space(self):
+        """Test that ATS 'Preferred Location ' (trailing space) maps to location_raw."""
+        record = {
+            "id": "recATS123",
+            "fields": {
+                "Hiring Job Title": "Growth Analyst",
+                "Company": "Radarblock",
+                "Preferred Location ": ["Middle East", "Europe", "India"],
+            },
+        }
+
+        result = map_airtable_row_to_raw_job(record)
+
+        assert result["location_raw"] == "Middle East,Europe,India"
+
     def test_handles_missing_recruiter_fields(self):
         """Test that missing recruiter fields do not break mapping."""
         record = {

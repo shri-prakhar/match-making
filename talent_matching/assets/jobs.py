@@ -22,6 +22,7 @@ from dagster import (
     Output,
     asset,
 )
+from sqlalchemy import select
 
 from talent_matching.db import get_session
 from talent_matching.llm.operations.embed_text import embed_text
@@ -46,6 +47,7 @@ from talent_matching.matchmaking.scoring import (
     skill_coverage_score,
     skill_semantic_score,
 )
+from talent_matching.models.raw import RawJob
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_job_to_airtable_fields
 from talent_matching.utils.dagster_async import run_with_interrupt_check
@@ -106,6 +108,20 @@ def raw_jobs(
             notion.fetch_page_content(link) or job_description or "(No content from Notion)"
         )
 
+    location_raw = airtable_jobs.get("location_raw")
+    if not (location_raw or "").strip():
+        session = get_session()
+        existing = session.execute(
+            select(RawJob).where(RawJob.airtable_record_id == record_id)
+        ).scalar_one_or_none()
+        session.close()
+        if existing and (existing.location_raw or "").strip():
+            location_raw = existing.location_raw
+            context.log.info(
+                f"Using existing location_raw for {record_id} (source={existing.source}): "
+                f"{(location_raw or '')[:60]}..."
+            )
+
     payload = {
         "airtable_record_id": record_id,
         "source": "airtable",
@@ -116,7 +132,7 @@ def raw_jobs(
         "job_description": job_description or "(No description provided)",
         "company_website_url": airtable_jobs.get("company_website_url"),
         "experience_level_raw": None,
-        "location_raw": airtable_jobs.get("location_raw"),
+        "location_raw": location_raw,
         "work_setup_raw": None,
         "status_raw": None,
         "job_category_raw": airtable_jobs.get("job_title_raw"),

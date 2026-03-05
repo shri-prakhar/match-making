@@ -223,6 +223,7 @@ AIRTABLE_JOBS_COLUMN_MAPPING: dict[str, str] = {
     "Projected Salary": "projected_salary",
     "Location": "location_raw",
     "Preferred Location": "location_raw",
+    "Preferred Location ": "location_raw",  # ATS table sometimes has trailing space
 }
 
 
