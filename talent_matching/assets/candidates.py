@@ -867,7 +867,6 @@ def candidate_role_fitness(
     partitions_def=candidate_partitions,
     ins={
         "normalized_candidates": AssetIn(),
-        "candidate_skill_verification": AssetIn(),
     },
     description="Write normalized candidate fields back to Airtable (N)-prefixed columns",
     group_name="candidates",
@@ -877,7 +876,6 @@ def candidate_role_fitness(
 def airtable_candidate_sync(
     context: AssetExecutionContext,
     normalized_candidates: dict[str, Any],
-    candidate_skill_verification: dict[str, Any],
 ) -> dict[str, Any]:
     """Write all normalized candidate fields back to the same Airtable row under (N)-prefixed columns.
 
