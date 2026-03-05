@@ -82,9 +82,9 @@ def run_failure_tagger(context: dg.RunFailureSensorContext):
         all_tags.update(_classify_failure(error.to_string()))
 
     if not all_tags:
-        pipeline_error = context.failure_event.pipeline_failure_data.error
-        if pipeline_error is not None:
-            all_tags.update(_classify_failure(pipeline_error.to_string()))
+        job_failure = context.failure_event.job_failure_data
+        if job_failure is not None and job_failure.error is not None:
+            all_tags.update(_classify_failure(job_failure.error.to_string()))
 
     if not all_tags:
         all_tags.add("UNKNOWN_FAILURE")
