@@ -96,53 +96,96 @@ def raw_jobs(
     context: AssetExecutionContext,
     airtable_jobs: dict[str, Any],
 ) -> dict[str, Any]:
-    """Resolve job description from Airtable row (Notion URL or text) and store as RawJob."""
+    """Resolve job description from Airtable row (Notion URL or text) and store as RawJob.
+
+    Prefers existing RawJob from Postgres when present (e.g. from ATS sensor ingestion).
+    This ensures ATS-triggered runs get full job_description, non_negotiables, nice_to_have,
+    and location_raw even when airtable_jobs fetches from a table with different column names.
+    """
     record_id = context.partition_key
     notion = context.resources.notion
-    link = airtable_jobs.get("job_description_link")
-    job_description = airtable_jobs.get("job_description_text") or ""
 
-    if link and _is_notion_url(link):
+    session = get_session()
+    existing_raw = session.execute(
+        select(RawJob).where(RawJob.airtable_record_id == record_id)
+    ).scalar_one_or_none()
+    session.close()
+
+    # Prefer Postgres RawJob when it has richer data (e.g. from ATS sensor)
+    if existing_raw and (existing_raw.job_description or "").strip():
+        base = {
+            "airtable_record_id": record_id,
+            "source": existing_raw.source,
+            "source_id": existing_raw.source_id,
+            "source_url": existing_raw.source_url,
+            "job_title": existing_raw.job_title,
+            "company_name": existing_raw.company_name,
+            "job_description": (existing_raw.job_description or "").strip(),
+            "company_website_url": existing_raw.company_website_url,
+            "experience_level_raw": existing_raw.experience_level_raw,
+            "location_raw": existing_raw.location_raw,
+            "work_setup_raw": existing_raw.work_setup_raw,
+            "status_raw": existing_raw.status_raw,
+            "job_category_raw": existing_raw.job_category_raw,
+            "x_url": existing_raw.x_url,
+            "non_negotiables": existing_raw.non_negotiables,
+            "nice_to_have": existing_raw.nice_to_have,
+            "projected_salary": existing_raw.projected_salary,
+        }
+        link = existing_raw.source_url
+        job_description = base["job_description"]
+        context.log.info(
+            f"Using existing RawJob for {record_id} (source={existing_raw.source}, "
+            f"desc: {len(job_description)} chars)"
+        )
+    else:
+        link = airtable_jobs.get("job_description_link")
+        job_description = airtable_jobs.get("job_description_text") or ""
+        base = {
+            "airtable_record_id": record_id,
+            "source": "airtable",
+            "source_id": record_id,
+            "source_url": link or None,
+            "job_title": airtable_jobs.get("job_title_raw"),
+            "company_name": airtable_jobs.get("company_name"),
+            "job_description": job_description or "(No description provided)",
+            "company_website_url": airtable_jobs.get("company_website_url"),
+            "experience_level_raw": None,
+            "location_raw": airtable_jobs.get("location_raw"),
+            "work_setup_raw": None,
+            "status_raw": None,
+            "job_category_raw": airtable_jobs.get("job_title_raw"),
+            "x_url": airtable_jobs.get("x_url"),
+            "non_negotiables": airtable_jobs.get("non_negotiables"),
+            "nice_to_have": airtable_jobs.get("nice_to_have"),
+            "projected_salary": airtable_jobs.get("projected_salary"),
+        }
+
+    if (
+        link
+        and _is_notion_url(link)
+        and (not (job_description or "").strip() or job_description == "(No description provided)")
+    ):
         context.log.info(f"Fetching Notion page for job: {link[:60]}...")
         job_description = (
             notion.fetch_page_content(link) or job_description or "(No content from Notion)"
         )
+        base["job_description"] = job_description
 
-    location_raw = airtable_jobs.get("location_raw")
-    if not (location_raw or "").strip():
-        session = get_session()
-        existing = session.execute(
-            select(RawJob).where(RawJob.airtable_record_id == record_id)
-        ).scalar_one_or_none()
-        session.close()
-        if existing and (existing.location_raw or "").strip():
-            location_raw = existing.location_raw
-            context.log.info(
-                f"Using existing location_raw for {record_id} (source={existing.source}): "
-                f"{(location_raw or '')[:60]}..."
-            )
+    if (
+        not (base.get("location_raw") or "").strip()
+        and existing_raw
+        and ((existing_raw.location_raw or "").strip())
+    ):
+        base["location_raw"] = existing_raw.location_raw
+        context.log.info(
+            f"Using existing location_raw for {record_id}: {(base['location_raw'] or '')[:60]}..."
+        )
 
-    payload = {
-        "airtable_record_id": record_id,
-        "source": "airtable",
-        "source_id": record_id,
-        "source_url": link or None,
-        "job_title": airtable_jobs.get("job_title_raw"),
-        "company_name": airtable_jobs.get("company_name"),
-        "job_description": job_description or "(No description provided)",
-        "company_website_url": airtable_jobs.get("company_website_url"),
-        "experience_level_raw": None,
-        "location_raw": location_raw,
-        "work_setup_raw": None,
-        "status_raw": None,
-        "job_category_raw": airtable_jobs.get("job_title_raw"),
-        "x_url": airtable_jobs.get("x_url"),
-        "non_negotiables": airtable_jobs.get("non_negotiables"),
-        "nice_to_have": airtable_jobs.get("nice_to_have"),
-        "projected_salary": airtable_jobs.get("projected_salary"),
-    }
-    context.log.info(f"Prepared raw job {record_id} (description length: {len(job_description)})")
-    return payload
+    context.log.info(
+        f"Prepared raw job {record_id} (description length: {len(base['job_description'])})"
+    )
+    return base
 
 
 def _is_notion_url(url: str) -> bool:
