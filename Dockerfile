@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir poetry && \
 WORKDIR /build
 
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --only main --no-root --no-interaction
+RUN poetry install --with parsing --without dev --no-root --no-interaction
 
 FROM python:3.13-slim
 
