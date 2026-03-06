@@ -9,6 +9,7 @@ alwaysApply: true
 
 | Goal | Command | DB Target |
 |------|---------|-----------|
+| Run Dagster fully locally (no tunnel) | `poetry run local-dev` | Local |
 | Start remote Dagster UI (tunnels + webserver) | `poetry run remote-ui` | Remote (tunnel) |
 | Run Dagster locally with remote DB (fast debug) | `poetry run local-matchmaking` | Remote (tunnel) |
 | Set up local Postgres + migrations | `poetry run setup-db` | Local |
@@ -29,10 +30,11 @@ alwaysApply: true
 
 | Script | Purpose |
 |--------|---------|
+| `local-dev` | Run Dagster dev fully locally (webserver + daemon + code); uses local Postgres. No SSH tunnel. |
 | `remote-ui` | Start Dagster UI locally; tunnels to remote Postgres + gRPC. Jobs run on remote. |
 | `local-matchmaking` | Run Dagster dev locally; code executes on your machine, DB via tunnel to remote. |
 | `setup-db` | Start local Postgres (Docker) and run migrations. |
-| `deploy` | Git pull + docker compose rebuild on remote. |
+| `deploy` | Deploy to remote (requires REMOTE_HOST in .env). Use `deploy --local` when on the server. |
 | `with-local-db` | Run a command with `POSTGRES_HOST=localhost`, `POSTGRES_PORT=5432`. Loads `.env` automatically. |
 | `with-remote-db` | Run a command with `POSTGRES_HOST=localhost`, `POSTGRES_PORT=15432` (or `POSTGRES_REMOTE_TUNNEL_PORT`). Loads `.env` automatically. |
 
