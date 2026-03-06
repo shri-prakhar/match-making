@@ -48,9 +48,11 @@ from talent_matching.resources import (
     OpenRouterResource,
     TwitterAPIResource,
 )
+from talent_matching.resources.telegram import TelegramResource
 from talent_matching.sensors.airtable_sensor import (
     airtable_candidate_sensor,
 )
+from talent_matching.sensors.alerting import system_health_sensor
 from talent_matching.sensors.ats_matchmaking_sensor import ats_matchmaking_sensor
 from talent_matching.sensors.run_failure_sensor import run_failure_tagger
 
@@ -99,9 +101,9 @@ dev_resources = {
         api_key=EnvVar("OPENROUTER_API_KEY"),
         default_model="openai/gpt-4o-mini",
     ),
-    # GitHub API resource
+    # GitHub API resource (requires GITHUB_TOKEN in .env for 5000 req/hr)
     "github": GitHubAPIResource(
-        mock_mode=True,
+        api_token=EnvVar("GITHUB_TOKEN"),
     ),
     # Twitter/X API resource
     "twitter_api": TwitterAPIResource(
@@ -115,6 +117,11 @@ dev_resources = {
     "postgres_io": PostgresMetricsIOManager(),
     "pgvector_io": PgVectorIOManager(),
     "matchmaking": MatchmakingResource(),
+    # Telegram alerts (no-op when TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID unset)
+    "telegram": TelegramResource(
+        bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+    ),
 }
 
 
@@ -165,6 +172,7 @@ all_sensors = [
     airtable_candidate_sensor,
     ats_matchmaking_sensor,
     run_failure_tagger,
+    system_health_sensor,
 ]
 
 # Create the Dagster Definitions object

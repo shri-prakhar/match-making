@@ -61,7 +61,8 @@ def _classify_failure(error_str: str) -> list[str]:
     name="run_failure_tagger",
     description=(
         "Tags failed runs with classified failure reasons. "
-        "Known failures get a specific tag; unknown failures get UNKNOWN_FAILURE."
+        "Known failures get a specific tag; unknown failures get UNKNOWN_FAILURE. "
+        "Sends Telegram alert for critical/unknown failures."
     ),
     default_status=dg.DefaultSensorStatus.RUNNING,
 )
@@ -93,3 +94,13 @@ def run_failure_tagger(context: dg.RunFailureSensorContext):
     context.instance.add_run_tags(run_id, {FAILURE_TAG: tag_value})
 
     context.log.info(f"Tagged failed run {run_id} ({job_name}) with {FAILURE_TAG}={tag_value}")
+
+    # Telegram alert for critical failures: UNKNOWN_FAILURE or multiple known types
+    should_alert = "UNKNOWN_FAILURE" in all_tags or len(all_tags) > 1
+    if should_alert and hasattr(context.resources, "telegram"):
+        telegram = context.resources.telegram
+        if telegram.enabled and telegram.bot_token and telegram.chat_id:
+            telegram.send_alert(
+                f"Run Failed: {job_name}",
+                f"Run {run_id}\nFailure types: {tag_value}",
+            )

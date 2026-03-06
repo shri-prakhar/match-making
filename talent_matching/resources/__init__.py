@@ -10,6 +10,7 @@ from talent_matching.resources.linkedin import LinkedInAPIResource
 from talent_matching.resources.matchmaking import MatchmakingResource
 from talent_matching.resources.notion import NotionResource
 from talent_matching.resources.openrouter import OpenRouterResource
+from talent_matching.resources.telegram import TelegramResource
 from talent_matching.resources.twitter import TwitterAPIResource
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "MatchmakingResource",
     "NotionResource",
     "OpenRouterResource",
+    "TelegramResource",
 ]
