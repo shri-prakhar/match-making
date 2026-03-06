@@ -46,6 +46,7 @@ candidate_partitions = DynamicPartitionsDefinition(name="candidates")
     description="Single candidate record fetched from Airtable",
     group_name="candidates",
     required_resource_keys={"airtable"},
+    code_version="1.0.0",
     op_tags={"dagster/concurrency_key": "airtable_api"},
     metadata={
         "source": "airtable",
@@ -180,7 +181,9 @@ def raw_candidates(
             extraction_metadata["cv_extraction_error"] = result.error
         context.add_output_metadata(extraction_metadata)
     else:
-        context.log.info(f"[raw_candidates] record_id={record_id} No cv_url; skipping PDF extraction")
+        context.log.info(
+            f"[raw_candidates] record_id={record_id} No cv_url; skipping PDF extraction"
+        )
 
     # Build raw data for storage
     raw_data = {
@@ -700,7 +703,9 @@ def candidate_skill_verification(
 
     skills = (normalized_candidates.get("normalized_json") or {}).get("skills", [])
     if not skills:
-        context.log.info(f"[candidate_skill_verification] record_id={record_id} No skills; skipping")
+        context.log.info(
+            f"[candidate_skill_verification] record_id={record_id} No skills; skipping"
+        )
         return {
             "candidate_id": str(candidate_id),
             "airtable_record_id": record_id,

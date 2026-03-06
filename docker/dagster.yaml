@@ -77,6 +77,9 @@ run_coordinator:
       - key: "dagster/concurrency_limit"
         value: "matchmaking"
         limit: 1
+      - key: "dagster/job_name"
+        value: "candidate_pipeline"
+        limit: 15
 
 run_monitoring:
   enabled: true

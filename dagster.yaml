@@ -100,6 +100,9 @@ run_coordinator:
       - key: "dagster/concurrency_limit"
         value: "matchmaking"
         limit: 1
+      - key: "dagster/job_name"
+        value: "candidate_pipeline"
+        limit: 15
 
 # Detect orphaned runs whose processes have died (e.g. after daemon/container restart)
 # and automatically mark them as failed so they don't block the run queue.
