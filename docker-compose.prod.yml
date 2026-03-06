@@ -44,6 +44,7 @@ services:
       ENVIRONMENT: production
       DAGSTER_HOME: /opt/dagster/dagster_home
     volumes:
+      - dagster_home:/opt/dagster/dagster_home
       - ./docker/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
     ports:
       - "127.0.0.1:4266:4266"
@@ -71,6 +72,7 @@ services:
       ENVIRONMENT: production
       DAGSTER_HOME: /opt/dagster/dagster_home
     volumes:
+      - dagster_home:/opt/dagster/dagster_home
       - ./docker/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
       - ./docker/workspace.yaml:/opt/dagster/workspace.yaml:ro
     depends_on:
@@ -84,6 +86,7 @@ services:
 
 volumes:
   postgres_data:
+  dagster_home:
 
 networks:
   dagster_network:
