@@ -48,6 +48,12 @@ services:
       - ./docker/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
     ports:
       - "127.0.0.1:4266:4266"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',4266)); s.close()"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,7 +85,7 @@ services:
       postgres:
         condition: service_healthy
       dagster-code:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - dagster_network
