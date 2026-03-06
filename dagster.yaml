@@ -101,6 +101,15 @@ run_coordinator:
         value: "matchmaking"
         limit: 1
 
+# Detect orphaned runs whose processes have died (e.g. after daemon/container restart)
+# and automatically mark them as failed so they don't block the run queue.
+run_monitoring:
+  enabled: true
+  poll_interval_seconds: 120
+  max_resume_run_attempts: 0
+  startup_timeout_seconds: 300
+  cancel_timeout_seconds: 300
+
 # Telemetry (disabled for privacy)
 telemetry:
   enabled: false

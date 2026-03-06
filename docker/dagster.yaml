@@ -78,5 +78,12 @@ run_coordinator:
         value: "matchmaking"
         limit: 1
 
+run_monitoring:
+  enabled: true
+  poll_interval_seconds: 120
+  max_resume_run_attempts: 0
+  startup_timeout_seconds: 300
+  cancel_timeout_seconds: 300
+
 telemetry:
   enabled: false
