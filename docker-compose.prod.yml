@@ -46,6 +46,7 @@ services:
     volumes:
       - dagster_home:/opt/dagster/dagster_home
       - ./docker/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
+      - /data/dagster_storage:/opt/dagster/dagster_home/storage
     ports:
       - "127.0.0.1:4266:4266"
     healthcheck:
@@ -81,6 +82,7 @@ services:
       - dagster_home:/opt/dagster/dagster_home
       - ./docker/dagster.yaml:/opt/dagster/dagster_home/dagster.yaml:ro
       - ./docker/workspace.yaml:/opt/dagster/workspace.yaml:ro
+      - /data/dagster_storage:/opt/dagster/dagster_home/storage
     depends_on:
       postgres:
         condition: service_healthy
