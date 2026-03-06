@@ -14,6 +14,7 @@ local-dev = "talent_matching.cli:local_dev"
 local-matchmaking = "talent_matching.cli:local_matchmaking"
 deploy = "talent_matching.cli:deploy"
 setup-db = "talent_matching.cli:setup_db"
+migrate-dagster = "talent_matching.cli:migrate_dagster"
 with-local-db = "talent_matching.cli:with_local_db"
 with-remote-db = "talent_matching.cli:with_remote_db"
 
@@ -35,6 +36,7 @@ alembic = ">=1.13.0"
 httpx = ">=0.26.0"
 
 # Utilities
+numpy = ">=1.24.0"
 python-dotenv = ">=1.0.0"
 pydantic = ">=2.0.0"
 

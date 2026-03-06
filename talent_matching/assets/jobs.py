@@ -13,6 +13,7 @@ This module defines the asset graph for processing jobs and generating matches:
 import asyncio
 from typing import Any
 
+import numpy as np
 from dagster import (
     AllPartitionMapping,
     AssetExecutionContext,
@@ -41,7 +42,7 @@ from talent_matching.matchmaking.location_filter import (
 from talent_matching.matchmaking.scoring import (
     SENIORITY_MAX_DEDUCTION,
     compensation_fit,
-    cosine_similarity,
+    cosine_similarity_batch,
     location_score,
     seniority_penalty_and_experience_score,
     skill_coverage_score,
@@ -202,20 +203,23 @@ def _is_notion_url(url: str) -> bool:
 def _build_job_description_for_scoring(
     raw_job: dict[str, Any],
     normalized_job: dict[str, Any],
-) -> str:
+) -> tuple[str, str]:
     """Build job description for LLM scoring: prefer raw text, fallback to normalized content.
 
     When raw_job.job_description is empty (e.g. loaded from DB without it, or different
     ingestion path), we try normalized_job.job_description (stored at normalization time),
     then synthesize from role_summary, narratives, requirements, and responsibilities.
+
+    Returns:
+        (job_description, source) where source is "raw" | "normalized" | "synthesized" | "empty"
     """
     raw_desc = (raw_job.get("job_description") or "").strip()
     if raw_desc and len(raw_desc) >= 50:
-        return raw_desc
+        return raw_desc, "raw"
 
     norm_desc = (normalized_job.get("job_description") or "").strip()
     if norm_desc and len(norm_desc) >= 50:
-        return norm_desc
+        return norm_desc, "normalized"
 
     parts: list[str] = []
     role_summary = (normalized_job.get("role_summary") or "").strip()
@@ -280,7 +284,8 @@ def _build_job_description_for_scoring(
     if tech and isinstance(tech, list):
         parts.append(f"Tech stack: {', '.join(str(t) for t in tech)}")
 
-    return "\n\n".join(parts) if parts else raw_desc or "(No job description available)"
+    result = "\n\n".join(parts) if parts else raw_desc or "(No job description available)"
+    return result, "synthesized" if parts else "empty"
 
 
 @asset(
@@ -620,7 +625,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.7.0",  # location pre-filter: use location_prefiltered_candidates
+    code_version="2.8.0",  # NumPy batch cosine similarity
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     metadata={
@@ -773,6 +778,81 @@ def matches(
         job_category = (job.get("job_category") or "").strip()
 
         # Per (job, candidate) raw scores; then we rescale vector_score per job
+        # Batch vector similarity: filter candidates first, then compute role/domain/culture in one pass
+        filtered_candidates: list[tuple[dict[str, Any], str, str]] = []
+        for candidate in normalized_candidates:
+            cand_id_norm = candidate.get("id")
+            raw_cand_id = str(candidate.get("raw_candidate_id", ""))
+            if not cand_id_norm or not raw_cand_id:
+                continue
+            if job_category:
+                desired = candidate.get("desired_job_categories") or []
+                desired_normalized = {
+                    (c or "").strip().lower() for c in desired if (c or "").strip()
+                }
+                if not desired_normalized or job_category.lower() not in desired_normalized:
+                    continue
+            filtered_candidates.append((candidate, raw_cand_id, str(cand_id_norm)))
+
+        role_sims: np.ndarray
+        domain_sims: np.ndarray
+        culture_sims: np.ndarray
+        if filtered_candidates:
+            cand_vecs_list = [cand_vecs_by_raw.get(rcid, {}) for _, rcid, _ in filtered_candidates]
+            dim = 1536
+
+            # role: max over position_* or experience per candidate
+            role_vecs_flat: list[list[float]] = []
+            role_cand_ends: list[int] = []
+            for cvecs in cand_vecs_list:
+                position_keys = [k for k in cvecs if k.startswith("position_")]
+                if position_keys:
+                    role_vecs_flat.extend(cvecs[k] for k in position_keys)
+                elif cvecs.get("experience"):
+                    role_vecs_flat.append(cvecs["experience"])
+                role_cand_ends.append(len(role_vecs_flat))
+
+            if role_vecs_flat and job_role_vec:
+                role_matrix = np.array(role_vecs_flat, dtype=np.float64)
+                role_sims_flat = cosine_similarity_batch(
+                    np.array(job_role_vec, dtype=np.float64), role_matrix
+                )
+                role_sims = np.zeros(len(filtered_candidates), dtype=np.float64)
+                start = 0
+                for i, end in enumerate(role_cand_ends):
+                    role_sims[i] = float(np.max(role_sims_flat[start:end])) if end > start else 0.0
+                    start = end
+            else:
+                role_sims = np.zeros(len(filtered_candidates), dtype=np.float64)
+
+            # domain: one vector per candidate
+            domain_vecs = [cvecs.get("domain") for cvecs in cand_vecs_list]
+            domain_vecs_arr = np.array(
+                [v if v else [0.0] * dim for v in domain_vecs], dtype=np.float64
+            )
+            domain_sims = (
+                cosine_similarity_batch(np.array(job_domain_vec, dtype=np.float64), domain_vecs_arr)
+                if job_domain_vec and domain_vecs_arr.size
+                else np.zeros(len(filtered_candidates), dtype=np.float64)
+            )
+
+            # culture: one vector per candidate
+            culture_vecs = [cvecs.get("personality") for cvecs in cand_vecs_list]
+            culture_vecs_arr = np.array(
+                [v if v else [0.0] * dim for v in culture_vecs], dtype=np.float64
+            )
+            culture_sims = (
+                cosine_similarity_batch(
+                    np.array(job_personality_vec, dtype=np.float64), culture_vecs_arr
+                )
+                if job_personality_vec and culture_vecs_arr.size
+                else np.zeros(len(filtered_candidates), dtype=np.float64)
+            )
+        else:
+            role_sims = np.array([], dtype=np.float64)
+            domain_sims = np.array([], dtype=np.float64)
+            culture_sims = np.array([], dtype=np.float64)
+
         rows: list[
             tuple[
                 float,
@@ -789,46 +869,17 @@ def matches(
                 dict[str, str],
             ]
         ] = []
-        for candidate in normalized_candidates:
-            cand_id_norm = candidate.get("id")
-            raw_cand_id = str(candidate.get("raw_candidate_id", ""))
-            if not cand_id_norm or not raw_cand_id:
-                continue
-            # Strict filter: job category must match one of the candidate's desired job categories
-            if job_category:
-                desired = candidate.get("desired_job_categories") or []
-                desired_normalized = {
-                    (c or "").strip().lower() for c in desired if (c or "").strip()
-                }
-                if not desired_normalized or job_category.lower() not in desired_normalized:
-                    continue
+        for idx, (candidate, raw_cand_id, cand_id_norm) in enumerate(filtered_candidates):
             cvecs = cand_vecs_by_raw.get(raw_cand_id, {})
-
-            # role_sim: job role_description vs best of candidate position_*
-            position_keys = [k for k in cvecs if k.startswith("position_")]
-            if job_role_vec and position_keys:
-                role_sim = max(cosine_similarity(job_role_vec, cvecs[k]) for k in position_keys)
-            elif job_role_vec and cvecs.get("experience"):
-                role_sim = cosine_similarity(job_role_vec, cvecs["experience"])
-            else:
-                role_sim = 0.0
-
-            domain_sim = (
-                cosine_similarity(job_domain_vec, cvecs["domain"])
-                if job_domain_vec and cvecs.get("domain")
-                else 0.0
-            )
-            culture_sim = (
-                cosine_similarity(job_personality_vec, cvecs["personality"])
-                if job_personality_vec and cvecs.get("personality")
-                else 0.0
-            )
+            role_sim = float(role_sims[idx]) if idx < len(role_sims) else 0.0
+            domain_sim = float(domain_sims[idx]) if idx < len(domain_sims) else 0.0
+            culture_sim = float(culture_sims[idx]) if idx < len(culture_sims) else 0.0
 
             vector_score = (
                 ROLE_WEIGHT * role_sim + DOMAIN_WEIGHT * domain_sim + CULTURE_WEIGHT * culture_sim
             )
 
-            cand_skills_list = candidate_skills_map.get(str(cand_id_norm), [])
+            cand_skills_list = candidate_skills_map.get(cand_id_norm, [])
             cand_skills_map_for_cand: dict[str, tuple[float, int | None]] = {}
             for cs in cand_skills_list:
                 name = (cs.get("skill_name") or "").strip()
@@ -1056,7 +1107,7 @@ def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
     group_name="matching",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="1.3.0",  # v1.3.0: fallback job description from normalized content when raw empty
+    code_version="1.3.1",  # v1.3.1: add debug logging for job description source/length
     metadata={"table": "matches"},
     op_tags={"dagster/concurrency_key": "openrouter_api"},
 )
@@ -1082,9 +1133,76 @@ def llm_refined_shortlist(
 
     job = normalized_jobs if isinstance(normalized_jobs, dict) else (normalized_jobs or [{}])[0]
     raw_job = raw_jobs if isinstance(raw_jobs, dict) else (raw_jobs or [{}])[0]
+    # #region agent log
+    _log = "/Users/mikehenry/Workspace/Tests/STT-Assignment/.cursor/debug-7525bf.log"
+    import json as _json
+
+    open(_log, "a").write(
+        _json.dumps(
+            {
+                "sessionId": "7525bf",
+                "hypothesisId": "H2,H3",
+                "location": "jobs.llm_refined_shortlist",
+                "message": "inputs extracted",
+                "data": {
+                    "record_id": record_id,
+                    "norm_type": type(normalized_jobs).__name__,
+                    "raw_type": type(raw_jobs).__name__,
+                    "raw_job_keys": list(raw_job.keys())[:15],
+                    "job_keys": list(job.keys())[:15],
+                    "raw_desc_len": len((raw_job.get("job_description") or "").strip()),
+                    "norm_desc_len": len((job.get("job_description") or "").strip()),
+                },
+            }
+        )
+        + "\n"
+    )
+    # #endregion
     job_id_norm = str(job.get("id", ""))
     job_title = job.get("job_title") or job.get("job_category") or "Unknown"
-    job_description = _build_job_description_for_scoring(raw_job, job)
+
+    # Debug: log input availability before building job description
+    raw_desc_len = len((raw_job.get("job_description") or "").strip())
+    norm_desc_len = len((job.get("job_description") or "").strip())
+    context.log.info(
+        f"[llm_refined_shortlist] record_id={record_id} Job description inputs: "
+        f"raw_job.job_description={raw_desc_len} chars, "
+        f"normalized_job.job_description={norm_desc_len} chars, "
+        f"raw_job keys={list(raw_job.keys())[:12]}"
+    )
+
+    job_description, desc_source = _build_job_description_for_scoring(raw_job, job)
+    # #region agent log
+    open(_log, "a").write(
+        _json.dumps(
+            {
+                "sessionId": "7525bf",
+                "hypothesisId": "H2,H3",
+                "location": "jobs.llm_refined_shortlist",
+                "message": "after _build_job_description_for_scoring",
+                "data": {
+                    "record_id": record_id,
+                    "desc_source": desc_source,
+                    "job_description_len": len(job_description),
+                    "job_description_preview": job_description[:200],
+                },
+            }
+        )
+        + "\n"
+    )
+    # #endregion
+    preview = job_description[:200] + ("..." if len(job_description) > 200 else "")
+    context.log.info(
+        f"[llm_refined_shortlist] record_id={record_id} Job description for scoring: "
+        f"source={desc_source}, len={len(job_description)} chars, "
+        f"preview={repr(preview)}"
+    )
+    if desc_source in ("empty", "synthesized") and len(job_description) < 100:
+        context.log.warning(
+            f"[llm_refined_shortlist] record_id={record_id} Job description is thin ({len(job_description)} chars, "
+            f"source={desc_source}). LLM may output generic 'no job description' responses. "
+            f"Check raw_jobs.job_description in DB for this partition."
+        )
 
     req_skills = context.resources.matchmaking.get_job_required_skills([job_id_norm])
     all_reqs = req_skills.get(job_id_norm, [])
@@ -1095,7 +1213,7 @@ def llm_refined_shortlist(
         run_id=context.run_id,
         asset_key="llm_refined_shortlist",
         partition_key=context.partition_key,
-        code_version="1.3.0",
+        code_version="1.3.1",
     )
 
     non_negotiables = (raw_job.get("non_negotiables") or "").strip() or None
