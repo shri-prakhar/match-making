@@ -18,6 +18,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    shm_size: 256m
     mem_limit: 3g
     cpus: 2
     networks:
