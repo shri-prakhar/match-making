@@ -331,6 +331,15 @@ async def normalize_cv(
     content = response["choices"][0]["message"]["content"]
     usage = response.get("usage", {})
 
-    return NormalizeCVResult(
-        data=json.loads(content), usage=usage, model=model, prompt_version=PROMPT_VERSION
-    )
+    parsed = json.loads(content)
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"LLM returned {type(parsed).__name__} instead of dict. "
+            f"First 200 chars: {content[:200]}"
+        )
+    if "name" not in parsed:
+        raise ValueError(
+            f"LLM response missing required 'name' field. " f"Keys returned: {list(parsed.keys())}"
+        )
+
+    return NormalizeCVResult(data=parsed, usage=usage, model=model, prompt_version=PROMPT_VERSION)
