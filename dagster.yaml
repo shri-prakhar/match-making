@@ -113,6 +113,14 @@ run_monitoring:
   start_timeout_seconds: 300
   cancel_timeout_seconds: 300
 
+# Op-level concurrency pools.
+# Assets tagged with dagster/concurrency_key (e.g. "openrouter_api", "airtable_api")
+# are throttled to this many concurrent executions across all runs.
+# Without this section the concurrency keys in op_tags are silently ignored.
+concurrency:
+  pools:
+    default_limit: 50
+
 # Telemetry (disabled for privacy)
 telemetry:
   enabled: false

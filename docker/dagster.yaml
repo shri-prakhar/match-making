@@ -88,5 +88,9 @@ run_monitoring:
   start_timeout_seconds: 300
   cancel_timeout_seconds: 300
 
+concurrency:
+  pools:
+    default_limit: 50
+
 telemetry:
   enabled: false
