@@ -59,23 +59,32 @@ def resolve_candidate_timezone(
 
 
 def _lookup_cached(session: Session, city: str | None, country: str) -> str | None:
-    """Check location_timezones for an exact (city, country) match."""
+    """Check location_timezones for an exact (city, country) match.
+
+    Uses scalars().first() instead of scalar_one_or_none() because
+    PostgreSQL unique constraints don't prevent duplicate NULL values,
+    so (NULL, country) pairs can have multiple rows.
+    """
     stmt = select(LocationTimezone.timezone).where(
         LocationTimezone.country == country,
         LocationTimezone.city == city if city else LocationTimezone.city.is_(None),
     )
-    result = session.execute(stmt).scalar_one_or_none()
+    result = session.execute(stmt).scalars().first()
     if result:
         logger.debug("Cache hit for (%s, %s): %s", city, country, result)
         return result
 
     if city:
-        fallback = session.execute(
-            select(LocationTimezone.timezone).where(
-                LocationTimezone.country == country,
-                LocationTimezone.city.is_(None),
+        fallback = (
+            session.execute(
+                select(LocationTimezone.timezone).where(
+                    LocationTimezone.country == country,
+                    LocationTimezone.city.is_(None),
+                )
             )
-        ).scalar_one_or_none()
+            .scalars()
+            .first()
+        )
         if fallback:
             logger.debug("Country-level cache hit for (%s, %s): %s", city, country, fallback)
             return fallback
@@ -117,6 +126,6 @@ def _cache_result(session: Session, city: str | None, country: str, resolved: di
         confidence=resolved.get("confidence", "high"),
         resolved_by="llm",
     )
-    stmt = stmt.on_conflict_do_nothing(constraint="uq_location_timezones_city_country")
+    stmt = stmt.on_conflict_do_nothing()
     session.execute(stmt)
     session.flush()
