@@ -47,7 +47,7 @@ candidate_partitions = DynamicPartitionsDefinition(name="candidates")
     description="Single candidate record fetched from Airtable",
     group_name="candidates",
     required_resource_keys={"airtable"},
-    code_version="1.1.0",
+    code_version="1.2.0",
     op_tags={"dagster/concurrency_key": "airtable_api"},
     metadata={
         "source": "airtable",
@@ -70,9 +70,10 @@ def airtable_candidates(context: AssetExecutionContext) -> Output[dict[str, Any]
     try:
         candidate = airtable.fetch_record_by_id(record_id)
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
+        if exc.response.status_code in (403, 404):
             context.log.warning(
-                f"[airtable_candidates] record_id={record_id} not found in Airtable (404). "
+                f"[airtable_candidates] record_id={record_id} inaccessible "
+                f"(HTTP {exc.response.status_code}). "
                 "Removing partition so it is not retried."
             )
             context.instance.delete_dynamic_partition(
@@ -80,7 +81,7 @@ def airtable_candidates(context: AssetExecutionContext) -> Output[dict[str, Any]
                 partition_key=record_id,
             )
             raise ValueError(
-                f"Airtable record {record_id} no longer exists (HTTP 404). "
+                f"Airtable record {record_id} returned HTTP {exc.response.status_code}. "
                 "Partition removed from Dagster."
             ) from exc
         raise
