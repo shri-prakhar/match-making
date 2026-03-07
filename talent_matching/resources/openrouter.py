@@ -115,8 +115,8 @@ class OpenRouterResource(ConfigurableResource):
         description="Max retries on timeout or transient errors (429, 5xx). Total attempts = 1 + max_retries.",
     )
     retry_base_delay_seconds: float = Field(
-        default=2.0,
-        description="Base delay in seconds for exponential backoff between retries (2, 4, 8, ...).",
+        default=5.0,
+        description="Base delay in seconds for exponential backoff between retries (5, 10, 20, ...).",
     )
     # Internal state (not configurable, uses Pydantic PrivateAttr)
     _context: LLMContext = PrivateAttr(default_factory=LLMContext)
@@ -152,14 +152,21 @@ class OpenRouterResource(ConfigurableResource):
     ) -> httpx.Response:
         """POST with timeout and exponential-backoff retry on timeout or 429/5xx."""
         last_error: BaseException | None = None
+        _last_status: int | None = None
         for attempt in range(self.max_retries + 1):
             if attempt > 0:
-                delay = self.retry_base_delay_seconds * (2 ** (attempt - 1))
+                # 429 (rate limit) gets a steeper backoff: 5, 15, 45s
+                # Other retryable errors use standard backoff: 5, 10, 20s
+                if _last_status == 429:
+                    delay = self.retry_base_delay_seconds * (3 ** (attempt - 1))
+                else:
+                    delay = self.retry_base_delay_seconds * (2 ** (attempt - 1))
                 get_dagster_logger().warning(
                     f"OpenRouter retry {attempt}/{self.max_retries} after {delay:.1f}s: {last_error}"
                 )
                 await asyncio.sleep(delay)
             async with httpx.AsyncClient() as client:
+                _last_status = None
                 try:
                     response = await client.post(
                         url,
@@ -170,6 +177,7 @@ class OpenRouterResource(ConfigurableResource):
                     if response.is_success:
                         return response
                     if response.status_code in _OPENROUTER_RETRYABLE_STATUS_CODES:
+                        _last_status = response.status_code
                         last_error = httpx.HTTPStatusError(
                             f"OpenRouter {response.status_code}",
                             request=response.request,
