@@ -15,6 +15,7 @@ import json
 import os
 from typing import Any
 
+import httpx
 from dagster import (
     AssetExecutionContext,
     AssetIn,
@@ -46,7 +47,7 @@ candidate_partitions = DynamicPartitionsDefinition(name="candidates")
     description="Single candidate record fetched from Airtable",
     group_name="candidates",
     required_resource_keys={"airtable"},
-    code_version="1.0.0",
+    code_version="1.1.0",
     op_tags={"dagster/concurrency_key": "airtable_api"},
     metadata={
         "source": "airtable",
@@ -65,7 +66,24 @@ def airtable_candidates(context: AssetExecutionContext) -> Output[dict[str, Any]
     context.log.info(f"[airtable_candidates] record_id={record_id} Fetching from Airtable")
 
     airtable = context.resources.airtable
-    candidate = airtable.fetch_record_by_id(record_id)
+
+    try:
+        candidate = airtable.fetch_record_by_id(record_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            context.log.warning(
+                f"[airtable_candidates] record_id={record_id} not found in Airtable (404). "
+                "Removing partition so it is not retried."
+            )
+            context.instance.delete_dynamic_partition(
+                partitions_def_name="candidates",
+                partition_key=record_id,
+            )
+            raise ValueError(
+                f"Airtable record {record_id} no longer exists (HTTP 404). "
+                "Partition removed from Dagster."
+            ) from exc
+        raise
 
     # Extract data version for Dagster's change detection
     data_version = candidate.pop("_data_version", None)
