@@ -25,7 +25,7 @@ from pathlib import Path
 import httpx
 
 # Match rerun_matchmaking_done_jobs.py and Airtable single-select values
-ATS_MATCHMAKING_DONE = "Matchmaking Done "  # trailing space
+ATS_MATCHMAKING_DONE = "Matchmaking Done"
 ATS_CLIENT_INTRODUCTION = "Client Introduction"
 ATS_TABLE_ID = "tblrbhITEIBOxwcQV"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -93,8 +93,13 @@ def main() -> int:
         "after candidate pipeline backfill finishes."
     )
     parser.add_argument(
-        "run_id",
-        help="Run ID of the candidate pipeline backfill to wait for",
+        "run_or_backfill_id",
+        help="Run ID or backfill ID of the candidate pipeline to wait for",
+    )
+    parser.add_argument(
+        "--backfill-id",
+        action="store_true",
+        help="Treat first arg as backfill ID (poll partitionBackfillOrError)",
     )
     parser.add_argument(
         "--deploy",
@@ -146,11 +151,13 @@ def main() -> int:
     cmd = [
         sys.executable,
         str(launch_script),
-        args.run_id,
-        partitions_arg,
         "--poll-interval",
         str(args.poll_interval),
     ]
+    if args.backfill_id:
+        cmd.extend(["--backfill-id", args.run_or_backfill_id, partitions_arg])
+    else:
+        cmd.extend([args.run_or_backfill_id, partitions_arg])
     if args.on_failure:
         cmd.append("--on-failure")
 

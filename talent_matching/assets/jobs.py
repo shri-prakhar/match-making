@@ -1336,7 +1336,7 @@ def llm_refined_shortlist(
 
 ATS_AI_PROPOSED_FIELD = "AI PROPOSTED CANDIDATES"
 ATS_JOB_STATUS_FIELD = "Job Status"
-ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done "  # trailing space matches Airtable choice
+ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done"
 
 
 @asset(

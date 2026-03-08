@@ -16,7 +16,7 @@ import sys
 
 import httpx
 
-ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done "  # trailing space matches Airtable
+ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done"
 ATS_TABLE_ID = os.getenv("AIRTABLE_ATS_TABLE_ID", "tblrbhITEIBOxwcQV")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
