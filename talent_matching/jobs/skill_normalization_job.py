@@ -4,7 +4,7 @@ import asyncio
 from uuid import UUID
 
 from dagster import OpExecutionContext, ScheduleDefinition, job, op
-from sqlalchemy import func, select
+from sqlalchemy import column, func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from talent_matching.db import get_session
@@ -166,7 +166,7 @@ def apply_skill_assignments(context: OpExecutionContext, llm_result: dict) -> di
             added_by="llm",
         )
         stmt = stmt.on_conflict_do_update(
-            index_elements=["alias"],
+            index_elements=[func.lower(column("alias"))],
             set_={"skill_id": skill_id, "added_by": "llm"},
         )
         session.execute(stmt)
@@ -202,7 +202,7 @@ def apply_skill_assignments(context: OpExecutionContext, llm_result: dict) -> di
                 added_by="llm",
             )
             stmt = stmt.on_conflict_do_update(
-                index_elements=["alias"],
+                index_elements=[func.lower(column("alias"))],
                 set_={"skill_id": canonical_skill.id, "added_by": "llm"},
             )
             session.execute(stmt)

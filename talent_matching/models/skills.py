@@ -54,7 +54,7 @@ class SkillAlias(Base):
     __tablename__ = "skill_aliases"
 
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    alias: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Foreign key to canonical skill
     skill_id: Mapped[UUID] = mapped_column(
