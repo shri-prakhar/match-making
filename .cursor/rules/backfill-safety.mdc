@@ -1,0 +1,14 @@
+---
+description: Safety procedure for running large Dagster backfills
+alwaysApply: true
+---
+
+# Backfill Safety
+
+Before running a large backfill (>100 partitions), especially after code changes:
+
+1. **Test first**: Launch a backfill with only ~100 partitions and monitor until they complete.
+2. **Verify**: Check that all 100 succeeded (no step failures, no daemon crashes).
+3. **Then scale**: If the test batch passes, launch the remaining partitions.
+
+Never remove dynamic partitions during a running backfill — it crashes the backfill daemon with `DagsterAssetBackfillDataLoadError`.
