@@ -71,15 +71,6 @@ run_launcher:
 run_coordinator:
   module: dagster._core.run_coordinator
   class: QueuedRunCoordinator
-  config:
-    max_concurrent_runs: 20
-    tag_concurrency_limits:
-      - key: "dagster/concurrency_limit"
-        value: "matchmaking"
-        limit: 1
-      - key: "dagster/job_name"
-        value: "candidate_pipeline"
-        limit: 15
 
 run_monitoring:
   enabled: true
@@ -89,6 +80,15 @@ run_monitoring:
   cancel_timeout_seconds: 300
 
 concurrency:
+  runs:
+    max_concurrent_runs: 20
+    tag_concurrency_limits:
+      - key: "dagster/concurrency_limit"
+        value: "matchmaking"
+        limit: 1
+      - key: "dagster/job_name"
+        value: "candidate_pipeline"
+        limit: 15
   pools:
     default_limit: 50
 

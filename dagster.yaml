@@ -84,25 +84,12 @@ run_launcher:
   module: dagster._core.launcher
   class: DefaultRunLauncher
 
-# Queue runs so we can cap concurrency
-#   Connection budget (PostgreSQL max_connections=300):
-#     Both app (talent_matching.db) and Dagster storage use NullPool — connections
-#     are transient but overlap across many concurrent subprocesses.
-#     Observed: ~6-8 transient connections per run (Dagster event log writes, run
-#     status updates, app DB ops). 20 runs × 8 = 160 peak, plus ~30 overhead = 190.
-#   Also bounded by 16 GB RAM: each run subprocess uses ~100-200 MB.
+# Queue runs so we can cap concurrency.
+# In Dagster 1.12+, run limits and tag limits live under the unified
+# "concurrency" section, not under run_coordinator.config.
 run_coordinator:
   module: dagster._core.run_coordinator
   class: QueuedRunCoordinator
-  config:
-    max_concurrent_runs: 20
-    tag_concurrency_limits:
-      - key: "dagster/concurrency_limit"
-        value: "matchmaking"
-        limit: 1
-      - key: "dagster/job_name"
-        value: "candidate_pipeline"
-        limit: 15
 
 # Detect orphaned runs whose processes have died (e.g. after daemon/container restart)
 # and automatically mark them as failed so they don't block the run queue.
@@ -113,11 +100,23 @@ run_monitoring:
   start_timeout_seconds: 300
   cancel_timeout_seconds: 300
 
-# Op-level concurrency pools.
-# Assets tagged with dagster/concurrency_key (e.g. "openrouter_api", "airtable_api")
-# are throttled to this many concurrent executions across all runs.
-# Without this section the concurrency keys in op_tags are silently ignored.
+# Unified concurrency config (Dagster 1.12+).
+#   Connection budget (PostgreSQL max_connections=300):
+#     Both app (talent_matching.db) and Dagster storage use NullPool — connections
+#     are transient but overlap across many concurrent subprocesses.
+#     Observed: ~6-8 transient connections per run (Dagster event log writes, run
+#     status updates, app DB ops). 20 runs × 8 = 160 peak, plus ~30 overhead = 190.
+#   Also bounded by 16 GB RAM: each run subprocess uses ~100-200 MB.
 concurrency:
+  runs:
+    max_concurrent_runs: 20
+    tag_concurrency_limits:
+      - key: "dagster/concurrency_limit"
+        value: "matchmaking"
+        limit: 1
+      - key: "dagster/job_name"
+        value: "candidate_pipeline"
+        limit: 15
   pools:
     default_limit: 50
 
