@@ -3,6 +3,7 @@
 from typing import Any
 from uuid import UUID, uuid4
 
+import numpy as np
 from dagster import ConfigurableResource
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -123,36 +124,40 @@ class MatchmakingResource(ConfigurableResource):
     def get_candidate_vectors(
         self,
         raw_candidate_ids: list[str],
-    ) -> dict[str, dict[str, list[float]]]:
-        """Load candidate vectors from DB, keyed by raw_candidate_id -> vector_type -> vector.
+    ) -> dict[str, dict[str, np.ndarray]]:
+        """Load candidate vectors from DB as numpy float32 arrays, streamed to avoid OOM.
 
-        Only loads vectors for the specified candidates instead of all 7k+.
-        Used by the matches asset to avoid the AllPartitionMapping OOM.
+        Uses yield_per to stream rows from Postgres instead of loading all at once,
+        and stores as compact numpy float32 arrays (~6KB each) instead of Python float
+        lists (~43KB each). For 7k candidates × 15 vectors this reduces peak memory
+        from ~9GB to ~600MB.
 
         Args:
             raw_candidate_ids: List of raw_candidates.id UUIDs (as strings).
 
         Returns:
-            Dict mapping raw_candidate_id (str) to {vector_type: vector_list}.
+            Dict mapping raw_candidate_id (str) to {vector_type: np.ndarray(float32)}.
         """
         if not raw_candidate_ids:
             return {}
         uuids = [UUID(rid) if isinstance(rid, str) else rid for rid in raw_candidate_ids]
         session = self._get_session()
-        stmt = select(
-            CandidateVector.candidate_id,
-            CandidateVector.vector_type,
-            CandidateVector.vector,
-        ).where(CandidateVector.candidate_id.in_(uuids))
-        rows = session.execute(stmt).all()
-        session.close()
-
-        result: dict[str, dict[str, list[float]]] = {}
-        for cand_id, vtype, vec in rows:
+        stmt = (
+            select(
+                CandidateVector.candidate_id,
+                CandidateVector.vector_type,
+                CandidateVector.vector,
+            )
+            .where(CandidateVector.candidate_id.in_(uuids))
+            .execution_options(yield_per=1000)
+        )
+        result: dict[str, dict[str, np.ndarray]] = {}
+        for cand_id, vtype, vec in session.execute(stmt):
             cid = str(cand_id)
             if cid not in result:
                 result[cid] = {}
-            result[cid][vtype] = list(vec)
+            result[cid][vtype] = np.asarray(vec, dtype=np.float32)
+        session.close()
         return result
 
     def get_normalized_candidate_by_airtable_record_id(

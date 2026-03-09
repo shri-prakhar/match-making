@@ -4,7 +4,6 @@ Used by the matches asset (talent_matching.assets.jobs) and by
 scripts/run_matchmaking_scoring.py so scoring logic stays in one place.
 """
 
-import math
 from typing import Any
 
 import numpy as np
@@ -42,17 +41,19 @@ def cosine_similarity_batch(query: np.ndarray, matrix: np.ndarray) -> np.ndarray
     return np.clip(sims, 0.0, 1.0)
 
 
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Cosine similarity in [0, 1]. Returns 0 if either vector is zero."""
-    if not a or not b or len(a) != len(b):
+def cosine_similarity(a: Any, b: Any) -> float:
+    """Cosine similarity in [0, 1]. Accepts lists or numpy arrays."""
+    if a is None or b is None:
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
+    va = np.asarray(a, dtype=np.float64).ravel()
+    vb = np.asarray(b, dtype=np.float64).ravel()
+    if va.size == 0 or vb.size == 0 or va.shape != vb.shape:
+        return 0.0
+    norm_a = np.linalg.norm(va)
+    norm_b = np.linalg.norm(vb)
     if norm_a == 0 or norm_b == 0:
         return 0.0
-    sim = dot / (norm_a * norm_b)
-    return max(0.0, min(1.0, sim))
+    return float(np.clip(np.dot(va, vb) / (norm_a * norm_b), 0.0, 1.0))
 
 
 def compensation_fit(
@@ -162,8 +163,8 @@ def location_score(
 def skill_coverage_score(
     req_skills: list[dict[str, Any]],
     cand_skills_map: dict[str, tuple[float, int | None]],
-    job_skill_vecs: dict[str, list[float]] | None = None,
-    cand_skill_vecs: dict[str, list[float]] | None = None,
+    job_skill_vecs: dict[str, Any] | None = None,
+    cand_skill_vecs: dict[str, Any] | None = None,
 ) -> float:
     """0-1: how well candidate skills cover job required skills (name + proficiency).
 
@@ -199,7 +200,7 @@ def skill_coverage_score(
 
         if rating == 0.0 and job_skill_vecs and cand_skill_vecs and cand_vec_keys:
             job_vec = job_skill_vecs.get(skill_vector_key(name))
-            if job_vec:
+            if job_vec is not None:
                 max_sim = max(cosine_similarity(job_vec, cand_skill_vecs[k]) for k in cand_vec_keys)
                 rating = max_sim * SEMANTIC_PARTIAL_CREDIT_CAP
 
@@ -217,10 +218,10 @@ def skill_coverage_score(
 
 
 def skill_semantic_score(
-    job_role_vec: list[float] | None,
-    cand_skill_vecs: dict[str, list[float]],
+    job_role_vec: Any | None,
+    cand_skill_vecs: dict[str, Any],
     req_skills: list[dict[str, Any]] | None = None,
-    job_skill_vecs: dict[str, list[float]] | None = None,
+    job_skill_vecs: dict[str, Any] | None = None,
 ) -> float:
     """0-1: per-skill job expected_capability vs candidate skill_* when both exist; else role vs max cand skill."""
     if req_skills and job_skill_vecs:
@@ -233,14 +234,14 @@ def skill_semantic_score(
             key = skill_vector_key(name)
             job_vec = job_skill_vecs.get(key)
             cand_vec = cand_skill_vecs.get(key)
-            if job_vec and cand_vec:
+            if job_vec is not None and cand_vec is not None:
                 w = 3.0 if (s.get("requirement_type") or "must_have") == "must_have" else 1.0
                 total_weight += w
                 weighted_sim += cosine_similarity(job_vec, cand_vec) * w
         if total_weight > 0:
             return weighted_sim / total_weight
     # Fallback: job role_description vs max similarity to candidate skill_* vectors
-    if not job_role_vec:
+    if job_role_vec is None:
         return 0.5
     skill_keys = [k for k in cand_skill_vecs if k.startswith("skill_")]
     if not skill_keys:

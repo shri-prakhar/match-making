@@ -621,7 +621,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.9.0",
+    code_version="2.10.0",
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={"dagster/concurrency_key": "matchmaking_vectors"},
@@ -766,7 +766,7 @@ def matches(
                 position_keys = [k for k in cvecs if k.startswith("position_")]
                 if position_keys:
                     role_vecs_flat.extend(cvecs[k] for k in position_keys)
-                elif cvecs.get("experience"):
+                elif cvecs.get("experience") is not None:
                     role_vecs_flat.append(cvecs["experience"])
                 role_cand_ends.append(len(role_vecs_flat))
 
@@ -786,7 +786,8 @@ def matches(
             # domain: one vector per candidate
             domain_vecs = [cvecs.get("domain") for cvecs in cand_vecs_list]
             domain_vecs_arr = np.array(
-                [v if v else [0.0] * dim for v in domain_vecs], dtype=np.float64
+                [v if v is not None else np.zeros(dim, dtype=np.float32) for v in domain_vecs],
+                dtype=np.float64,
             )
             domain_sims = (
                 cosine_similarity_batch(np.array(job_domain_vec, dtype=np.float64), domain_vecs_arr)
@@ -797,7 +798,8 @@ def matches(
             # culture: one vector per candidate
             culture_vecs = [cvecs.get("personality") for cvecs in cand_vecs_list]
             culture_vecs_arr = np.array(
-                [v if v else [0.0] * dim for v in culture_vecs], dtype=np.float64
+                [v if v is not None else np.zeros(dim, dtype=np.float32) for v in culture_vecs],
+                dtype=np.float64,
             )
             culture_sims = (
                 cosine_similarity_batch(
