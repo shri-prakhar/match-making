@@ -340,6 +340,16 @@ _JOB_INT_FIELDS = {"min_years_experience", "max_years_experience", "salary_min",
 _JOB_BOOL_FIELDS = {"has_equity", "has_token_compensation"}
 # Fields that should be parsed as floats
 _JOB_FLOAT_FIELDS = {"confidence_score"}
+# Valid choices for singleSelect fields in the Airtable jobs table.
+# Values not in these sets will be dropped to avoid 422 errors.
+_JOB_SENIORITY_CHOICES = {"junior", "mid", "senior", "lead", "principal"}
+_JOB_LOCATION_TYPE_CHOICES = {"remote", "hybrid", "onsite"}
+
+_JOB_SINGLE_SELECT_CHOICES: dict[str, set[str]] = {
+    "seniority_level": _JOB_SENIORITY_CHOICES,
+    "location_type": _JOB_LOCATION_TYPE_CHOICES,
+}
+
 # Fields that are comma-separated lists in Airtable
 _JOB_LIST_FIELDS = {
     "responsibilities",
@@ -397,6 +407,9 @@ def normalized_job_to_airtable_fields(job: dict[str, Any]) -> dict[str, Any]:
     Uses AIRTABLE_JOBS_WRITEBACK_FIELDS. Skips None values. Coerces enums, datetimes,
     lists (comma-separated), and booleans for Airtable API. Also populates
     SMART IDEAL CANDIDATE PROFILE from the narrative prose fields.
+
+    Values for singleSelect fields that aren't in the Airtable-configured choices
+    are silently dropped to avoid 422 errors.
     """
     fields: dict[str, Any] = {}
     for our_key, airtable_col in AIRTABLE_JOBS_WRITEBACK_FIELDS.items():
@@ -405,6 +418,9 @@ def normalized_job_to_airtable_fields(job: dict[str, Any]) -> dict[str, Any]:
             continue
         coerced = _value_for_airtable(raw)
         if coerced is None:
+            continue
+        valid_choices = _JOB_SINGLE_SELECT_CHOICES.get(our_key)
+        if valid_choices is not None and coerced not in valid_choices:
             continue
         fields[airtable_col] = coerced
 

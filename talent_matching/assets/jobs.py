@@ -1391,6 +1391,18 @@ def upload_matches_to_ats(
                 "pros": m.get("strengths"),
                 "cons": m.get("red_flags"),
                 "rank": m.get("rank"),
+                "combined_score": round(float(m["match_score"]) * 100, 2)
+                if m.get("match_score") is not None
+                else None,
+                "role_similarity": m.get("role_similarity_score"),
+                "domain_similarity": m.get("domain_similarity_score"),
+                "culture_similarity": m.get("culture_similarity_score"),
+                "skills_fit": m.get("skills_match_score"),
+                "compensation_fit": m.get("compensation_match_score"),
+                "experience_fit": m.get("experience_match_score"),
+                "location_fit": m.get("location_match_score"),
+                "matching_skills": m.get("matching_skills"),
+                "missing_skills": m.get("missing_skills"),
             }
             for m in sorted_matches
             if norm_to_airtable.get(m["candidate_id"])

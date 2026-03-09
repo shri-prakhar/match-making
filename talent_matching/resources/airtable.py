@@ -311,6 +311,13 @@ class AirtableResource(ConfigurableResource):
                     request=response.request,
                     response=response,
                 )
+            if response.status_code == 422:
+                body = response.text
+                raise httpx.HTTPStatusError(
+                    f"422 Unprocessable Entity for record {record_id}: {body}",
+                    request=response.request,
+                    response=response,
+                )
             response.raise_for_status()
             return response.json()
 
@@ -443,6 +450,13 @@ class AirtableJobsResource(ConfigurableResource):
                     request=response.request,
                     response=response,
                 )
+            if response.status_code == 422:
+                body = response.text
+                raise httpx.HTTPStatusError(
+                    f"422 Unprocessable Entity for record {record_id}: {body}",
+                    request=response.request,
+                    response=response,
+                )
             response.raise_for_status()
             return response.json()
 
@@ -561,6 +575,13 @@ class AirtableATSResource(ConfigurableResource):
                     request=response.request,
                     response=response,
                 )
+            if response.status_code == 422:
+                body = response.text
+                raise httpx.HTTPStatusError(
+                    f"422 Unprocessable Entity for record {record_id}: {body}",
+                    request=response.request,
+                    response=response,
+                )
             response.raise_for_status()
             return response.json()
 
@@ -663,9 +684,20 @@ class AirtableATSResource(ConfigurableResource):
                     "Pros": _join(m.get("pros")),
                     "Cons": _join(m.get("cons")),
                     "Rank": m.get("rank"),
+                    "Combined Score": m.get("combined_score"),
+                    "Role Similarity": m.get("role_similarity"),
+                    "Domain Similarity": m.get("domain_similarity"),
+                    "Culture Similarity": m.get("culture_similarity"),
+                    "Skills Fit": m.get("skills_fit"),
+                    "Compensation Fit": m.get("compensation_fit"),
+                    "Experience Fit": m.get("experience_fit"),
+                    "Location Fit": m.get("location_fit"),
+                    "Matching Skills": _join(m.get("matching_skills")),
+                    "Missing Skills": _join(m.get("missing_skills")),
                 }
                 if run_timestamp:
                     fields["Date Created"] = run_timestamp
+                fields = {k: v for k, v in fields.items() if v is not None}
                 records.append({"fields": fields})
             for i in range(0, len(records), 10):
                 batch = records[i : i + 10]
