@@ -75,6 +75,9 @@ from talent_matching.utils.dagster_async import run_with_interrupt_check
 # Dynamic partition definition for jobs (one partition per Airtable job record ID)
 job_partitions = DynamicPartitionsDefinition(name="jobs")
 
+MIN_RAW_JOB_DESCRIPTION_LEN = 100
+MIN_NORMALIZED_JOB_DESCRIPTION_LEN = 50
+
 
 @asset(
     partitions_def=job_partitions,
@@ -172,11 +175,12 @@ def raw_jobs(
             "company_name": airtable_jobs.get("company_name"),
             "job_description": job_description or "(No description provided)",
             "company_website_url": airtable_jobs.get("company_website_url"),
-            "experience_level_raw": None,
+            "experience_level_raw": airtable_jobs.get("experience_level_raw"),
             "location_raw": airtable_jobs.get("location_raw"),
-            "work_setup_raw": None,
+            "work_setup_raw": airtable_jobs.get("work_setup_raw"),
             "status_raw": None,
-            "job_category_raw": airtable_jobs.get("job_title_raw"),
+            "job_category_raw": airtable_jobs.get("job_category_raw")
+            or airtable_jobs.get("job_title_raw"),
             "x_url": airtable_jobs.get("x_url"),
             "non_negotiables": airtable_jobs.get("non_negotiables"),
             "nice_to_have": airtable_jobs.get("nice_to_have"),
@@ -205,11 +209,32 @@ def raw_jobs(
         )
 
     desc_len = len(base["job_description"])
+    has_non_negotiables = bool((base.get("non_negotiables") or "").strip())
+    has_location = bool((base.get("location_raw") or "").strip())
+    has_nice_to_have = bool((base.get("nice_to_have") or "").strip())
+    context.add_output_metadata(
+        {
+            "job_desc_len": desc_len,
+            "has_non_negotiables": has_non_negotiables,
+            "has_location": has_location,
+            "has_nice_to_have": has_nice_to_have,
+        }
+    )
     context.log.info(
         f"[raw_jobs] record_id={record_id} Ready: desc={desc_len} chars, "
-        f"non_negotiables={bool((base.get('non_negotiables') or '').strip())}, "
-        f"location={bool((base.get('location_raw') or '').strip())}"
+        f"non_negotiables={has_non_negotiables}, "
+        f"location={has_location}"
     )
+    if desc_len < MIN_RAW_JOB_DESCRIPTION_LEN:
+        raise Failure(
+            description=(
+                f"Job description too short for record_id={record_id} "
+                f"({desc_len} chars, source={base.get('source') or 'unknown'}). "
+                f"Minimum {MIN_RAW_JOB_DESCRIPTION_LEN} chars required before matchmaking. "
+                "Check Airtable Job Description Text/Link or run "
+                "`scripts/refresh_job_description_from_notion.py`."
+            ),
+        )
     return base
 
 
@@ -314,7 +339,7 @@ def _build_job_description_for_scoring(
     group_name="jobs",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter"},
-    code_version="2.3.2",  # v2.3.2: store job_description in payload for downstream scoring
+    code_version="2.4.0",  # v2.4.0: fail fast on thin jobs and pass richer recruiter guidance
     metadata={
         "table": "normalized_jobs",
         "llm_operation": "normalize_job",
@@ -328,24 +353,20 @@ def normalized_jobs(
     """Normalize raw job description for this partition via LLM; persist to normalized_jobs."""
     record_id = context.partition_key
     job_description = (raw_jobs.get("job_description") or "").strip()
-    if not job_description or len(job_description) < 50:
-        context.log.warning(
-            f"[normalized_jobs] record_id={record_id} Skipping LLM: desc too short ({len(job_description or '')} chars)"
+    if not job_description or len(job_description) < MIN_NORMALIZED_JOB_DESCRIPTION_LEN:
+        raise Failure(
+            description=(
+                f"Job description too short for normalization for record_id={record_id} "
+                f"({len(job_description or '')} chars). Minimum "
+                f"{MIN_NORMALIZED_JOB_DESCRIPTION_LEN} chars required. Fix raw_jobs first."
+            ),
         )
-        return {
-            "airtable_record_id": record_id,
-            "title": raw_jobs.get("job_title") or "Unknown",
-            "company_name": raw_jobs.get("company_name") or "Unknown",
-            "job_description": job_description or "(No description)",
-            "normalized_json": None,
-            "prompt_version": None,
-            "model_version": None,
-            "narratives": {},
-        }
     non_negotiables = (raw_jobs.get("non_negotiables") or "").strip() or None
     nice_to_have = (raw_jobs.get("nice_to_have") or "").strip() or None
     location_raw = (raw_jobs.get("location_raw") or "").strip() or None
     projected_salary = (raw_jobs.get("projected_salary") or "").strip() or None
+    job_category_raw = (raw_jobs.get("job_category_raw") or "").strip() or None
+    experience_level_raw = (raw_jobs.get("experience_level_raw") or "").strip() or None
 
     openrouter = context.resources.openrouter
     result = asyncio.run(
@@ -358,16 +379,23 @@ def normalized_jobs(
                 nice_to_have=nice_to_have,
                 location_raw=location_raw,
                 projected_salary=projected_salary,
+                job_category_raw=job_category_raw,
+                experience_level_raw=experience_level_raw,
             ),
         )
     )
     data = result.data
+    requirements = data.get("requirements") or {}
+    must_have_count = len(requirements.get("must_have_skills") or [])
     context.add_output_metadata(
         {
             "llm_cost_usd": result.cost_usd,
             "llm_tokens_input": result.input_tokens,
             "llm_tokens_output": result.output_tokens,
             "llm_model": result.model,
+            "must_have_count": must_have_count,
+            "has_job_category_raw": bool(job_category_raw),
+            "has_experience_level_raw": bool(experience_level_raw),
         }
     )
     context.log.info(
@@ -403,7 +431,7 @@ JOB_NARRATIVE_VECTOR_TYPES = [
     group_name="jobs",
     required_resource_keys={"openrouter"},
     io_manager_key="pgvector_io",
-    code_version="2.2.0",  # v2.2.0: Canonicalize skill vector keys via alias resolver
+    code_version="2.3.0",  # v2.3.0: fail fast when normalized jobs lack real narratives
     op_tags={"dagster/concurrency_key": "openrouter_api"},
     metadata={
         "table": "job_vectors",
@@ -422,7 +450,33 @@ def job_vectors(
     record_id = context.partition_key
     openrouter = context.resources.openrouter
 
+    if not normalized_jobs.get("normalized_json"):
+        raise Failure(
+            description=(
+                f"Normalized job has no normalized_json for record_id={record_id}. "
+                "Cannot generate meaningful job vectors."
+            ),
+        )
+
     narratives = normalized_jobs.get("narratives") or {}
+    actual_narratives = [
+        (normalized_jobs.get("narrative_experience") or narratives.get("experience") or "").strip(),
+        (normalized_jobs.get("narrative_domain") or narratives.get("domain") or "").strip(),
+        (
+            normalized_jobs.get("narrative_personality") or narratives.get("personality") or ""
+        ).strip(),
+        (normalized_jobs.get("narrative_impact") or narratives.get("impact") or "").strip(),
+        (normalized_jobs.get("narrative_technical") or narratives.get("technical") or "").strip(),
+        (normalized_jobs.get("narrative_role") or narratives.get("role") or "").strip(),
+    ]
+    actual_narrative_count = sum(1 for text in actual_narratives if text)
+    if actual_narrative_count == 0:
+        raise Failure(
+            description=(
+                f"Normalized job has no narratives for record_id={record_id}; "
+                "cannot produce meaningful vectors."
+            ),
+        )
 
     # Fallback to top-level narrative_* if present (e.g. from DB load)
     def _text(key: str, narrative_key: str) -> str:
@@ -477,6 +531,7 @@ def job_vectors(
             "embedding_model": result.model,
             "vectors_generated": len(result.embeddings),
             "skill_vectors": skill_count,
+            "actual_narrative_count": actual_narrative_count,
         }
     )
     context.log.info(
@@ -627,10 +682,13 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.10.0",
+    code_version="2.11.0",  # v2.11.0: add low-info metadata and cap matches concurrency
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
-    op_tags={"dagster/concurrency_key": "matchmaking_vectors"},
+    op_tags={
+        "dagster/concurrency_key": "matchmaking_vectors",
+        "dagster/concurrency_limit": "matchmaking",
+    },
     metadata={
         "table": "matches",
         "scoring_weights": {
@@ -707,6 +765,9 @@ def matches(
     candidate_skills_map = context.resources.matchmaking.get_candidate_skills(cand_ids)
 
     match_results: list[dict[str, Any]] = []
+    low_info_matchmaking = False
+    zero_must_haves = False
+    no_job_category = False
     for job in normalized_jobs:
         job_id_norm = job.get("id")
         raw_job_id = str(job.get("raw_job_id", ""))
@@ -740,6 +801,20 @@ def matches(
         job_location_type = job.get("location_type")
         job_timezone = job.get("timezone_requirements")
         job_category = (job.get("job_category") or "").strip()
+        if not must_have:
+            zero_must_haves = True
+            low_info_matchmaking = True
+            context.log.warning(
+                f"[matches] record_id={record_id} Job has zero must-have skills; "
+                "match quality may be unreliable"
+            )
+        if not job_category:
+            no_job_category = True
+            low_info_matchmaking = True
+            context.log.warning(
+                f"[matches] record_id={record_id} Job has no job_category; desired role "
+                "filter will be skipped"
+            )
 
         # Per (job, candidate) raw scores; then we rescale vector_score per job
         # Batch vector similarity: filter candidates first, then compute role/domain/culture in one pass
@@ -1038,6 +1113,13 @@ def matches(
             f"[matches] record_id={record_id} No matches (candidate_pool={len(normalized_candidates)}, "
             f"skill_min_threshold={SKILL_MIN_THRESHOLD})"
         )
+    context.add_output_metadata(
+        {
+            "low_info_matchmaking": low_info_matchmaking,
+            "zero_must_haves": zero_must_haves,
+            "no_job_category": no_job_category,
+        }
+    )
     return match_results
 
 
@@ -1073,7 +1155,7 @@ def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
     group_name="matching",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="1.3.3",  # v1.3.3: add used_fallback flag for fallback Matchmaking Result
+    code_version="1.4.0",  # v1.4.0: fail fast when must-have skills are missing
     metadata={"table": "matches"},
     op_tags={"dagster/concurrency_key": "openrouter_api"},
 )
@@ -1141,13 +1223,27 @@ def llm_refined_shortlist(
     req_skills = context.resources.matchmaking.get_job_required_skills([job_id_norm])
     all_reqs = req_skills.get(job_id_norm, [])
     must_haves = [r for r in all_reqs if r.get("requirement_type") == "must_have"]
+    context.add_output_metadata(
+        {
+            "zero_must_haves": not must_haves,
+            "must_have_count": len(must_haves),
+        }
+    )
+    if not must_haves:
+        raise Failure(
+            description=(
+                f"Job has zero must-have skills for record_id={record_id} ({job_title}). "
+                "LLM refinement cannot reliably filter candidates. Add clearer requirements "
+                "to the job description or normalization inputs."
+            ),
+        )
 
     openrouter = context.resources.openrouter
     openrouter.set_context(
         run_id=context.run_id,
         asset_key="llm_refined_shortlist",
         partition_key=context.partition_key,
-        code_version="1.3.2",
+        code_version="1.4.0",
     )
 
     non_negotiables = (raw_job.get("non_negotiables") or "").strip() or None

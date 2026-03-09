@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 # - MAJOR: Breaking changes to output schema
 # - MINOR: New fields or significant prompt improvements
 # - PATCH: Minor wording tweaks or bug fixes
-PROMPT_VERSION = "3.5.0"  # v3.5.0: Only extract skills explicitly in JD; do not infer from title
+PROMPT_VERSION = "3.6.0"  # v3.6.0: include recruiter job category and seniority guidance
 
 # Default model for job normalization (cost-effective for extraction)
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -137,10 +137,19 @@ def _build_user_prompt(
     nice_to_have: str | None = None,
     location_raw: str | None = None,
     projected_salary: str | None = None,
+    job_category_raw: str | None = None,
+    experience_level_raw: str | None = None,
 ) -> str:
     parts = [f"Parse this job description:\n\n{raw_job_text}"]
 
-    recruiter_fields = [non_negotiables, nice_to_have, location_raw, projected_salary]
+    recruiter_fields = [
+        non_negotiables,
+        nice_to_have,
+        location_raw,
+        projected_salary,
+        job_category_raw,
+        experience_level_raw,
+    ]
     if any(recruiter_fields):
         parts.append(
             "\n\n--- RECRUITER GUIDANCE ---\n"
@@ -165,6 +174,16 @@ def _build_user_prompt(
                 "Use this for the compensation.salary_min and compensation.salary_max "
                 "fields. Parse the range into numeric yearly values."
             )
+        if job_category_raw:
+            parts.append(
+                f"\n**Desired job category / role family:**\n{job_category_raw}\n"
+                "Use this to infer job_category when the raw description is vague."
+            )
+        if experience_level_raw:
+            parts.append(
+                f"\n**Recruiter-provided seniority / level:**\n{experience_level_raw}\n"
+                "Use this to infer seniority_level when supported by the job description."
+            )
 
     return "\n".join(parts)
 
@@ -177,6 +196,8 @@ async def normalize_job(
     nice_to_have: str | None = None,
     location_raw: str | None = None,
     projected_salary: str | None = None,
+    job_category_raw: str | None = None,
+    experience_level_raw: str | None = None,
 ) -> NormalizeJobResult:
     """Normalize a job description into structured format using LLM.
 
@@ -187,13 +208,21 @@ async def normalize_job(
         nice_to_have: Recruiter-provided nice-to-have preferences (free text)
         location_raw: Recruiter-specified preferred locations (e.g. "Singapore, Europe")
         projected_salary: Recruiter-specified salary range (e.g. "$120,000 - $170,000")
+        job_category_raw: Recruiter-provided role category / family label
+        experience_level_raw: Recruiter-provided level / seniority hint
 
     Returns:
         NormalizeJobResult with data, usage stats, and model for metadata
     """
     model = DEFAULT_MODEL
     user_prompt = _build_user_prompt(
-        raw_job_text, non_negotiables, nice_to_have, location_raw, projected_salary
+        raw_job_text,
+        non_negotiables,
+        nice_to_have,
+        location_raw,
+        projected_salary,
+        job_category_raw,
+        experience_level_raw,
     )
     response = await openrouter.complete(
         messages=[

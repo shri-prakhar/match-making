@@ -210,7 +210,10 @@ def parse_comma_separated(field_value: str | None) -> list[str]:
 AIRTABLE_JOBS_COLUMN_MAPPING: dict[str, str] = {
     "🔗  Job Description Link": "job_description_link",
     "Hiring Job Title": "job_title_raw",
+    "Desired Job Category": "job_category_raw",
     "Company": "company_name",
+    "Level": "experience_level_raw",
+    "Work Set Up Preference": "work_setup_raw",
     "Twitter Handle": "x_url",
     "Website Link": "company_website_url",
     "Full Name": "hiring_contact_name",
@@ -224,7 +227,6 @@ AIRTABLE_JOBS_COLUMN_MAPPING: dict[str, str] = {
     "Projected Salary": "projected_salary",
     "Location": "location_raw",
     "Preferred Location": "location_raw",
-    "Preferred Location ": "location_raw",  # ATS table sometimes has trailing space
 }
 
 
@@ -253,7 +255,9 @@ def map_airtable_row_to_raw_job(
     if column_mapping is None:
         column_mapping = AIRTABLE_JOBS_COLUMN_MAPPING
 
-    fields = record.get("fields", {})
+    fields = dict(record.get("fields", {}))
+    if "Preferred Location" not in fields and "Preferred Location " in fields:
+        fields["Preferred Location"] = fields["Preferred Location "]
     mapped: dict[str, Any] = {
         "airtable_record_id": record.get("id"),
         "source": "airtable",

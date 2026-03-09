@@ -377,9 +377,12 @@ class AirtableJobsResource(ConfigurableResource):
         content_fields = [
             "job_description_link",
             "job_title_raw",
+            "job_category_raw",
             "company_name",
             "x_url",
             "company_website_url",
+            "experience_level_raw",
+            "work_setup_raw",
             "non_negotiables",
             "nice_to_have",
             "location_raw",
@@ -491,7 +494,7 @@ class AirtableATSResource(ConfigurableResource):
         "Job Description Text",
         "Job Description Link",
         "Company",
-        "Preferred Location ",
+        "Preferred Location",
         "Level",
         "Desired Job Category",
         "Work Set Up Preference",
@@ -668,6 +671,9 @@ class AirtableATSResource(ConfigurableResource):
             "status_raw": fields.get("Job Status"),
             "job_category_raw": category_raw,
             "x_url": None,
+            "non_negotiables": fields.get("Non Negotiables") or None,
+            "nice_to_have": fields.get("Nice-to-have") or None,
+            "projected_salary": fields.get("Projected Salary") or None,
         }
 
     def replace_matches_for_job(
