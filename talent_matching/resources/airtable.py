@@ -500,6 +500,13 @@ class AirtableATSResource(ConfigurableResource):
         "Nice-to-have",
         "Notes",
         "Last Job Status Change",
+        "CLIENT INTRODUCTION",
+        "Shortlisted Talent",
+        "Potential Talent Fit",
+        "Potential Talent Fit Nick",
+        "Potential Talent Fit NOE",
+        "Hired",
+        "AI PROPOSTED CANDIDATES",
     ]
 
     @property
