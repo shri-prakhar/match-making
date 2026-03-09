@@ -25,6 +25,7 @@ from talent_matching.jobs.asset_jobs import (
     candidate_vectors_job,
     job_ingest_job,
     job_pipeline_job,
+    matchmaking_backfill_job,
     upload_normalized_jobs_to_airtable_job,
     upload_normalized_to_airtable_job,
 )
@@ -43,19 +44,20 @@ from talent_matching.jobs.timezone_lookup_job import (
 )
 
 __all__ = [
+    "ats_matchmaking_pipeline_job",
+    "candidate_ingest_job",
     "candidate_pipeline_job",
     "candidate_vectors_job",
-    "candidate_ingest_job",
-    "upload_normalized_to_airtable_job",
-    "job_pipeline_job",
     "job_ingest_job",
-    "upload_normalized_jobs_to_airtable_job",
-    "sync_airtable_candidates_job",
-    "sync_airtable_jobs_job",
+    "job_pipeline_job",
+    "matchmaking_backfill_job",
     "sample_candidates_job",
     "skill_normalization_job",
     "skill_normalization_schedule",
+    "sync_airtable_candidates_job",
+    "sync_airtable_jobs_job",
     "timezone_lookup_job",
     "timezone_lookup_schedule",
-    "ats_matchmaking_pipeline_job",
+    "upload_normalized_jobs_to_airtable_job",
+    "upload_normalized_to_airtable_job",
 ]

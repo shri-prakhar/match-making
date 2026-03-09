@@ -149,3 +149,26 @@ ats_matchmaking_pipeline_job = define_asset_job(
     op_retry_policy=openrouter_retry_policy,
     tags={"dagster/concurrency_limit": "matchmaking"},
 )
+
+matchmaking_backfill_job = define_asset_job(
+    name="matchmaking_backfill",
+    description=(
+        "Normalize jobs and compute initial match scores without LLM refinement. "
+        "Runs: airtable_jobs → raw_jobs → normalized_jobs → job_vectors → "
+        "airtable_job_sync → location_prefiltered_candidates → matches. "
+        "Use for cheap backfill of normalization and scoring data; no LLM calls. "
+        "Run sync_airtable_jobs_job first to add partitions, then Backfill."
+    ),
+    selection=[
+        airtable_jobs,
+        raw_jobs,
+        normalized_jobs,
+        job_vectors,
+        airtable_job_sync,
+        location_prefiltered_candidates,
+        matches,
+    ],
+    partitions_def=job_partitions,
+    op_retry_policy=openrouter_retry_policy,
+    tags={"dagster/concurrency_limit": "matchmaking"},
+)

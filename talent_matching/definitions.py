@@ -27,6 +27,7 @@ from talent_matching.jobs import (
     candidate_vectors_job,
     job_ingest_job,
     job_pipeline_job,
+    matchmaking_backfill_job,
     sample_candidates_job,
     skill_normalization_job,
     skill_normalization_schedule,
@@ -160,6 +161,8 @@ all_jobs = [
     timezone_lookup_job,
     # ATS-driven pipeline (sensor-triggered)
     ats_matchmaking_pipeline_job,
+    # Backfill: normalization + scoring without LLM refinement
+    matchmaking_backfill_job,
 ]
 
 # Schedules
