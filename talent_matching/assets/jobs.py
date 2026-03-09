@@ -137,8 +137,9 @@ def raw_jobs(
     ).scalar_one_or_none()
     session.close()
 
-    # Prefer Postgres RawJob when it has richer data (e.g. from ATS sensor)
-    if existing_raw and (existing_raw.job_description or "").strip():
+    # Prefer Postgres RawJob only when it has enough description (avoid stale short placeholders)
+    existing_desc = (existing_raw.job_description or "").strip() if existing_raw else ""
+    if existing_raw and len(existing_desc) >= MIN_RAW_JOB_DESCRIPTION_LEN:
         base = {
             "airtable_record_id": record_id,
             "source": existing_raw.source,
