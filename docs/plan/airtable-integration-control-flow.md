@@ -246,7 +246,7 @@ def airtable_matches_sync(
 ```
 
 This requires:
-1. A new `AirtableATSResource` (or extend `AirtableJobsResource`) configured with `AIRTABLE_ATS_TABLE_ID`.
+1. `AirtableATSResource` configured with `AIRTABLE_ATS_TABLE_ID` (job operations use ATS table only).
 2. A method to resolve job partition key → ATS record ID.
 3. A method to resolve candidate Postgres IDs → Talent Airtable record IDs.
 4. PATCH the ATS record's `Potential Talent Fit AI` with the candidate record IDs.
@@ -258,7 +258,7 @@ Add to `.env`:
 AIRTABLE_ATS_TABLE_ID=tblrbhITEIBOxwcQV
 ```
 
-Add a new `AirtableATSResource` in `talent_matching/resources/airtable.py` (same pattern as `AirtableJobsResource`) with methods:
+`AirtableATSResource` in `talent_matching/resources/airtable.py` provides:
 - `update_record(record_id, fields)` — PATCH linked record fields
 - `fetch_record_raw_fields(record_id)` — read current field values
 - `fetch_records_by_job_status(status)` — filter by Job Status dropdown
@@ -379,7 +379,7 @@ Our `matches` table stores `candidate_id` (Postgres UUID). We need the candidate
 
 ## Implementation Order
 
-1. **Add `AirtableATSResource`** — same pattern as existing `AirtableJobsResource`, pointed at the ATS table.
+1. **Use `AirtableATSResource`** — all job reads and write-backs use the ATS table.
 2. **Add `airtable_matches_sync` asset** — reads match results, resolves candidate record IDs, PATCHes ATS `Potential Talent Fit AI`.
 3. **Wire into matchmaking jobs** — include `airtable_matches_sync` in `matchmaking_job` and `matchmaking_with_feedback_job`.
 4. **Add `ats_job_status_sensor`** — poll ATS Job Status, trigger matchmaking on status transitions.

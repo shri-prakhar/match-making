@@ -1,6 +1,7 @@
-"""Create (N)-prefixed normalized job columns in the Airtable jobs table.
+"""Create (N)-prefixed normalized job columns in the Airtable ATS table.
 
 Uses the Airtable Meta API to add the columns required for airtable_job_sync.
+airtable_job_sync writes to the ATS table (same table as Job Status, AI PROPOSTED CANDIDATES).
 
 Requires an Airtable Personal Access Token with schema read + write access to the base
 (create at https://airtable.com/create/tokens and add the schema scope for your base).
@@ -17,7 +18,7 @@ Usage:
   Skip local backup:
     poetry run python scripts/create_airtable_normalized_job_columns.py --skip-backup
   Or with explicit env:
-    AIRTABLE_BASE_ID=appXXX AIRTABLE_JOBS_TABLE_ID=tblXXX AIRTABLE_API_KEY=patXXX \\
+    AIRTABLE_BASE_ID=appXXX AIRTABLE_ATS_TABLE_ID=tblXXX AIRTABLE_API_KEY=patXXX \\
     python scripts/create_airtable_normalized_job_columns.py
 
 Skips columns that already exist. Uses the same (N) names as AIRTABLE_JOBS_WRITEBACK_FIELDS.
@@ -116,16 +117,16 @@ SMART_IDEAL_CANDIDATE_PROFILE_SPEC = {"type": "multilineText"}
 def main() -> None:
     skip_backup = "--skip-backup" in sys.argv
     base_id = os.getenv("AIRTABLE_BASE_ID")
-    table_id = os.getenv("AIRTABLE_JOBS_TABLE_ID")
+    table_id = os.getenv("AIRTABLE_ATS_TABLE_ID")
     token = os.getenv("AIRTABLE_SCHEMA_TOKEN") or os.getenv("AIRTABLE_API_KEY")
     if not base_id or not table_id or not token:
         print(
-            "Set AIRTABLE_BASE_ID, AIRTABLE_JOBS_TABLE_ID, and "
+            "Set AIRTABLE_BASE_ID, AIRTABLE_ATS_TABLE_ID, and "
             "AIRTABLE_API_KEY (or AIRTABLE_SCHEMA_TOKEN) in .env"
         )
         sys.exit(1)
 
-    print(f"Base: {base_id}, Jobs Table: {table_id}")
+    print(f"Base: {base_id}, ATS Table: {table_id}")
 
     extra_columns = [
         ("Start Matchmaking", START_MATCHMAKING_SPEC),

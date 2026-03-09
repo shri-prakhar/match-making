@@ -14,10 +14,7 @@ import httpx
 from dagster import ConfigurableResource
 from pydantic import Field
 
-from talent_matching.utils.airtable_mapper import (
-    map_airtable_row_to_raw_candidate,
-    map_airtable_row_to_raw_job,
-)
+from talent_matching.utils.airtable_mapper import map_airtable_row_to_raw_candidate
 
 
 class AirtableResource(ConfigurableResource):
@@ -322,148 +319,6 @@ class AirtableResource(ConfigurableResource):
             return response.json()
 
 
-class AirtableJobsResource(ConfigurableResource):
-    """Airtable API resource for fetching job records (e.g. Customers STT table).
-
-    Same interface as AirtableResource but uses jobs table and job field mapping.
-    Configure with AIRTABLE_BASE_ID, AIRTABLE_JOBS_TABLE_ID, AIRTABLE_API_KEY.
-    """
-
-    base_id: str = Field(description="Airtable base ID (starts with 'app')")
-    table_id: str = Field(description="Airtable jobs table ID (starts with 'tbl')")
-    api_key: str = Field(description="Airtable Personal Access Token")
-    write_api_key: str | None = Field(
-        default=None,
-        description="Optional token with data.records:write scope for PATCH.",
-    )
-
-    @property
-    def _base_url(self) -> str:
-        return f"https://api.airtable.com/v0/{self.base_id}/{self.table_id}"
-
-    @property
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-    def _write_headers(self) -> dict[str, str]:
-        raw = self.write_api_key or self.api_key
-        token = raw.get_secret_value() if hasattr(raw, "get_secret_value") else raw
-        return {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-    def fetch_record_by_id(self, record_id: str) -> dict[str, Any]:
-        """Fetch a single job record by Airtable record ID. Returns mapped job fields."""
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(
-                f"{self._base_url}/{record_id}",
-                headers=self._headers,
-            )
-            response.raise_for_status()
-            record = response.json()
-        return self._map_record(record)
-
-    def _map_record(self, record: dict[str, Any]) -> dict[str, Any]:
-        mapped = map_airtable_row_to_raw_job(record)
-        mapped["created_time"] = record.get("createdTime")
-        mapped["_data_version"] = self._compute_record_hash(mapped)
-        return mapped
-
-    def _compute_record_hash(self, mapped_record: dict[str, Any]) -> str:
-        content_fields = [
-            "job_description_link",
-            "job_title_raw",
-            "job_category_raw",
-            "company_name",
-            "x_url",
-            "company_website_url",
-            "experience_level_raw",
-            "work_setup_raw",
-            "non_negotiables",
-            "nice_to_have",
-            "location_raw",
-            "projected_salary",
-        ]
-        content = {k: mapped_record.get(k) for k in content_fields}
-        content_str = str(sorted(content.items()))
-        return hashlib.sha256(content_str.encode()).hexdigest()[:16]
-
-    def get_all_record_ids(self) -> list[str]:
-        """Get all record IDs from the jobs table for dynamic partitions."""
-        record_ids: list[str] = []
-        offset: str | None = None
-        with httpx.Client(timeout=30.0) as client:
-            while True:
-                params: dict[str, Any] = {"fields[]": []}
-                if offset:
-                    params["offset"] = offset
-                response = client.get(
-                    self._base_url,
-                    headers=self._headers,
-                    params=params,
-                )
-                response.raise_for_status()
-                data = response.json()
-                for record in data.get("records", []):
-                    record_ids.append(record["id"])
-                offset = data.get("offset")
-                if not offset:
-                    break
-        return record_ids
-
-    def fetch_record_raw_fields(self, record_id: str) -> dict[str, Any]:
-        """Fetch a single record and return the raw Airtable fields dict (not mapped).
-
-        Useful for reading (N)-prefixed fields.
-        """
-        with httpx.Client(timeout=30.0) as client:
-            response = client.get(
-                f"{self._base_url}/{record_id}",
-                headers=self._headers,
-            )
-            response.raise_for_status()
-            record = response.json()
-        return record.get("fields", {})
-
-    def update_record(self, record_id: str, fields: dict[str, Any]) -> dict[str, Any]:
-        """Update an Airtable job record with the given fields (PATCH).
-
-        Args:
-            record_id: Airtable record ID (e.g. recXXX).
-            fields: Dict of Airtable column names to values (e.g. {"Hiring Job Title": "Senior Engineer"}).
-
-        Returns:
-            The updated Airtable record as returned by the API.
-        """
-        with httpx.Client(timeout=30.0) as client:
-            response = client.patch(
-                f"{self._base_url}/{record_id}",
-                headers=self._write_headers(),
-                json={"fields": fields},
-            )
-            if response.status_code == 403:
-                raise httpx.HTTPStatusError(
-                    "403 Forbidden: Airtable token does not have write access. "
-                    "Create a token at https://airtable.com/create/tokens with scope "
-                    "'data.records:write', then set AIRTABLE_API_KEY or AIRTABLE_WRITE_TOKEN.",
-                    request=response.request,
-                    response=response,
-                )
-            if response.status_code == 422:
-                body = response.text
-                raise httpx.HTTPStatusError(
-                    f"422 Unprocessable Entity for record {record_id}: {body}",
-                    request=response.request,
-                    response=response,
-                )
-            response.raise_for_status()
-            return response.json()
-
-
 class AirtableATSResource(ConfigurableResource):
     """Airtable API resource for the ATS table (job process / matchmaking workflow).
 
@@ -602,7 +457,7 @@ class AirtableATSResource(ConfigurableResource):
         return records
 
     def fetch_record_by_id(self, record_id: str) -> dict[str, Any]:
-        """Fetch a single ATS record by ID."""
+        """Fetch a single ATS record by ID (raw Airtable response)."""
         with httpx.Client(timeout=30.0) as client:
             response = client.get(
                 f"{self._base_url}/{record_id}",
@@ -610,6 +465,70 @@ class AirtableATSResource(ConfigurableResource):
             )
             response.raise_for_status()
             return response.json()
+
+    def get_all_record_ids(self) -> list[str]:
+        """Get all record IDs from the ATS table for dynamic partitions."""
+        record_ids: list[str] = []
+        offset: str | None = None
+        with httpx.Client(timeout=30.0) as client:
+            while True:
+                params: dict[str, Any] = {"fields[]": []}
+                if offset:
+                    params["offset"] = offset
+                response = client.get(
+                    self._base_url,
+                    headers=self._headers,
+                    params=params,
+                )
+                response.raise_for_status()
+                data = response.json()
+                for record in data.get("records", []):
+                    record_ids.append(record["id"])
+                offset = data.get("offset")
+                if not offset:
+                    break
+        return record_ids
+
+    def _compute_ats_record_hash(self, mapped: dict[str, Any]) -> str:
+        """Content hash for cache invalidation (same fields as pipeline cares about)."""
+        content_fields = [
+            "job_description_link",
+            "job_title_raw",
+            "job_category_raw",
+            "company_name",
+            "experience_level_raw",
+            "work_setup_raw",
+            "non_negotiables",
+            "nice_to_have",
+            "location_raw",
+            "projected_salary",
+        ]
+        content = {k: mapped.get(k) for k in content_fields}
+        content_str = str(sorted(content.items()))
+        return hashlib.sha256(content_str.encode()).hexdigest()[:16]
+
+    def fetch_record_by_id_canonical(self, record_id: str) -> dict[str, Any]:
+        """Fetch a single ATS record and return pipeline-canonical shape (job_title_raw, job_description_text, etc.)."""
+        record = self.fetch_record_by_id(record_id)
+        mapped = self.map_ats_record_to_raw_job(record)
+        canonical = {
+            "job_title_raw": mapped.get("job_title"),
+            "job_description_text": mapped.get("job_description") or "",
+            "job_description_link": mapped.get("source_url"),
+            "company_name": mapped.get("company_name"),
+            "company_website_url": mapped.get("company_website_url"),
+            "experience_level_raw": mapped.get("experience_level_raw"),
+            "location_raw": mapped.get("location_raw"),
+            "work_setup_raw": mapped.get("work_setup_raw"),
+            "job_category_raw": mapped.get("job_category_raw"),
+            "x_url": mapped.get("x_url"),
+            "non_negotiables": mapped.get("non_negotiables"),
+            "nice_to_have": mapped.get("nice_to_have"),
+            "projected_salary": mapped.get("projected_salary"),
+        }
+        canonical["created_time"] = record.get("createdTime")
+        canonical["_data_version"] = self._compute_ats_record_hash(canonical)
+        return canonical
 
     def update_record(self, record_id: str, fields: dict[str, Any]) -> dict[str, Any]:
         """Update an ATS record (PATCH)."""

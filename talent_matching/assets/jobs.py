@@ -82,19 +82,19 @@ MIN_NORMALIZED_JOB_DESCRIPTION_LEN = 50
 
 @asset(
     partitions_def=job_partitions,
-    description="Single job record fetched from Airtable (jobs table)",
+    description="Single job record fetched from Airtable ATS table",
     group_name="jobs",
     required_resource_keys={"airtable_jobs"},
     op_tags={"dagster/concurrency_key": "airtable_api"},
-    metadata={"source": "airtable"},
+    metadata={"source": "airtable_ats"},
 )
 def airtable_jobs(context: AssetExecutionContext) -> Output[dict[str, Any]]:
-    """Fetch a single job row from Airtable by partition key (Airtable record ID)."""
+    """Fetch a single job row from Airtable ATS table by partition key (Airtable record ID)."""
     record_id = context.partition_key
-    context.log.info(f"[airtable_jobs] record_id={record_id} Fetching from Airtable")
+    context.log.info(f"[airtable_jobs] record_id={record_id} Fetching from Airtable ATS")
 
     airtable = context.resources.airtable_jobs
-    job_record = airtable.fetch_record_by_id(record_id)
+    job_record = airtable.fetch_record_by_id_canonical(record_id)
 
     data_version = job_record.pop("_data_version", None)
     company = job_record.get("company_name", "Unknown")
@@ -126,7 +126,7 @@ def raw_jobs(
 
     Prefers existing RawJob from Postgres when present (e.g. from ATS sensor ingestion).
     This ensures ATS-triggered runs get full job_description, non_negotiables, nice_to_have,
-    and location_raw even when airtable_jobs fetches from a table with different column names.
+    and location_raw even when airtable_jobs fetches from ATS (e.g. sensor wrote RawJob first).
     """
     record_id = context.partition_key
     notion = context.resources.notion

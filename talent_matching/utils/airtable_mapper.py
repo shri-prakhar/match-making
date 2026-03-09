@@ -206,86 +206,8 @@ def parse_comma_separated(field_value: str | None) -> list[str]:
     return [item.strip() for item in items if item.strip()]
 
 
-# Column name mapping from Airtable (jobs table, e.g. Customers STT) to RawJob model fields
-AIRTABLE_JOBS_COLUMN_MAPPING: dict[str, str] = {
-    "🔗  Job Description Link": "job_description_link",
-    "Hiring Job Title": "job_title_raw",
-    "Desired Job Category": "job_category_raw",
-    "Company": "company_name",
-    "Level": "experience_level_raw",
-    "Work Set Up Preference": "work_setup_raw",
-    "Twitter Handle": "x_url",
-    "Website Link": "company_website_url",
-    "Full Name": "hiring_contact_name",
-    "Mail": "hiring_contact_email",
-    # Optional: if table has a text field for pasted job description
-    "Job Description Text": "job_description_text",
-    "Links & details": "job_description_text",
-    # Recruiter guidance: fed to LLM during normalization for must-have vs nice-to-have
-    "Non Negotiables": "non_negotiables",
-    "Nice-to-have": "nice_to_have",
-    "Projected Salary": "projected_salary",
-    "Location": "location_raw",
-    "Preferred Location": "location_raw",
-}
-
-
-def _serialize_airtable_value(value: Any) -> str | None:
-    """Serialize Airtable field value to string for raw job storage (e.g. multi-select -> JSON array string)."""
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return ",".join(str(v) for v in value) if value else None
-    return str(value) if value else None
-
-
-def map_airtable_row_to_raw_job(
-    record: dict[str, Any],
-    column_mapping: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    """Map an Airtable record (jobs table) to RawJob-like field names.
-
-    Args:
-        record: Airtable record with 'id', 'fields', 'createdTime'
-        column_mapping: Optional; defaults to AIRTABLE_JOBS_COLUMN_MAPPING.
-
-    Returns:
-        Dictionary with mapped field names and airtable_record_id, source, source_id.
-    """
-    if column_mapping is None:
-        column_mapping = AIRTABLE_JOBS_COLUMN_MAPPING
-
-    fields = dict(record.get("fields", {}))
-    if "Preferred Location" not in fields and "Preferred Location " in fields:
-        fields["Preferred Location"] = fields["Preferred Location "]
-    mapped: dict[str, Any] = {
-        "airtable_record_id": record.get("id"),
-        "source": "airtable",
-        "source_id": record.get("id"),
-    }
-    for airtable_col, model_field in column_mapping.items():
-        value = fields.get(airtable_col)
-        if value is None:
-            continue
-        if model_field == "job_description_link":
-            mapped[model_field] = (
-                value
-                if isinstance(value, str)
-                else (
-                    value[0].get("url")
-                    if isinstance(value, list) and value and isinstance(value[0], dict)
-                    else None
-                )
-            )
-        elif isinstance(value, list):
-            mapped[model_field] = ",".join(str(v) for v in value) if value else None
-        else:
-            mapped[model_field] = str(value) if value else None
-    return mapped
-
-
 # ═══════════════════════════════════════════════════════════════════════════
-# NORMALIZED JOB AIRTABLE SYNC
+# NORMALIZED JOB AIRTABLE SYNC (write-back to ATS table)
 # ═══════════════════════════════════════════════════════════════════════════
 
 NORMALIZED_JOB_SYNCABLE_FIELDS = [

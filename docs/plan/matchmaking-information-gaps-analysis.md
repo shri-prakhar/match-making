@@ -49,12 +49,12 @@ airtable_jobs (or ATS sensor → RawJob)
 **Root causes:**
 - Airtable: `Job Description Text` empty and `Job Description Link` not a Notion URL (or Notion fetch fails)
 - ATS sensor: `Job Description Text` empty and `Job Description Link` missing or Notion returns nothing
-- Column name mismatch: Jobs table uses "Links & details" or different names; mapper doesn't find the field
+- Column name mismatch: ATS field names (e.g. "Job Description Text", "Job Description Link") must match what the mapper expects
 
 **Relevant code:**
 - `talent_matching/assets/jobs.py`: `raw_jobs` (lines 164–165), `normalized_jobs` (lines 330–344)
-- `talent_matching/utils/airtable_mapper.py`: `AIRTABLE_JOBS_COLUMN_MAPPING` (lines 211–228)
-- `talent_matching/sensors/ats_matchmaking_sensor.py`: `_map_ats_record_to_raw_job` (lines 78–81)
+- `talent_matching/resources/airtable.py`: `AirtableATSResource.map_ats_record_to_raw_job`
+- `talent_matching/sensors/ats_matchmaking_sensor.py`: ATS record mapping (lines 78–81)
 
 ---
 
@@ -97,12 +97,11 @@ airtable_jobs (or ATS sensor → RawJob)
 **Root causes:**
 - Airtable column names don't match: "Non Negotiables" vs "Non-Negotiables", "Preferred Location " (trailing space) vs "Preferred Location"
 - ATS sensor: `fields.get("Non Negotiables")` — exact match required
-- Jobs table vs ATS table: different column sets; one may not have these columns
-- Recruiter simply didn't fill them in
+- Recruiter simply didn't fill them in on the ATS record
 
 **Relevant code:**
-- `talent_matching/utils/airtable_mapper.py`: `AIRTABLE_JOBS_COLUMN_MAPPING` (lines 223–226)
-- `talent_matching/sensors/ats_matchmaking_sensor.py`: `_map_ats_record_to_raw_job` (lines 61–62, 88–89)
+- `talent_matching/resources/airtable.py`: `AirtableATSResource.map_ats_record_to_raw_job` (Non Negotiables, Nice-to-have, Preferred Location)
+- `talent_matching/sensors/ats_matchmaking_sensor.py`: ATS record mapping (lines 61–62, 88–89)
 - `talent_matching/assets/jobs.py`: llm_refined_shortlist (lines 1153–1155)
 
 ---
@@ -166,18 +165,12 @@ airtable_jobs (or ATS sensor → RawJob)
 
 ---
 
-### 7. RawJob vs airtable_jobs Source Mismatch (ATS-Triggered Runs)
+### 7. RawJob vs airtable_jobs (ATS Only)
 
-**Where it happens:**
-- ATS sensor adds partitions from ATS table; `airtable_jobs` fetches from Jobs table
-- Record ID from ATS may not exist in Jobs table (different tables in same base)
-
-**Mitigation:**
-- `raw_jobs` **prefers existing RawJob** when it has `job_description`
-- ATS sensor writes RawJob to Postgres before triggering → `raw_jobs` uses it, never calls `airtable_jobs`
-- So for ATS-triggered runs, we avoid the mismatch
-
-**Caveat:** If ATS and Jobs are the same table, no issue. If different, ATS runs rely entirely on sensor ingestion.
+**Current design:**
+- All job operations use the ATS table only. `airtable_jobs` and `airtable_ats` both point to `AirtableATSResource` (ATS table).
+- Partition sync and single-record fetch use the same ATS table; no source mismatch.
+- `raw_jobs` still prefers existing RawJob when it has `job_description` (e.g. from ATS sensor ingestion before the run).
 
 ---
 

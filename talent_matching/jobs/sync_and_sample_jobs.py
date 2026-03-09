@@ -43,9 +43,9 @@ def sync_airtable_candidates_partitions(context: OpExecutionContext) -> dict:
 
 @op(required_resource_keys={"airtable_jobs"}, tags={"dagster/concurrency_key": "airtable_api"})
 def sync_airtable_jobs_partitions(context: OpExecutionContext) -> dict:
-    """Sync all Airtable job record IDs as dynamic partitions (jobs table)."""
+    """Sync all Airtable ATS job record IDs as dynamic partitions."""
     airtable_jobs_resource = context.resources.airtable_jobs
-    context.log.info("Fetching all record IDs from Airtable jobs table...")
+    context.log.info("Fetching all record IDs from Airtable ATS table...")
     all_record_ids = airtable_jobs_resource.get_all_record_ids()
     context.log.info(f"Found {len(all_record_ids)} job records")
 
@@ -71,9 +71,9 @@ def sync_airtable_candidates_job():
     sync_airtable_candidates_partitions()
 
 
-@job(description="Sync Airtable job records as dynamic partitions")
+@job(description="Sync Airtable ATS job records as dynamic partitions")
 def sync_airtable_jobs_job():
-    """Register all Airtable job record IDs (jobs table) as dynamic partitions."""
+    """Register all Airtable ATS job record IDs as dynamic partitions."""
     sync_airtable_jobs_partitions()
 
 

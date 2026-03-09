@@ -8,7 +8,7 @@ run and launch matchmaking for the fetched partitions.
 Prerequisites:
   - poetry run remote-ui RUNNING (webserver at localhost:3000, tunnel to remote)
   - AIRTABLE_BASE_ID, AIRTABLE_API_KEY, REMOTE_HOST in .env
-  - Partitions must exist in jobs dynamic partition (sync_airtable_jobs_job or add via UI)
+  - Partitions must exist in jobs dynamic partition (sync_airtable_jobs_job to sync ATS table, or add via UI)
 
 Usage:
   poetry run python scripts/schedule_matchmaking_after_backfill.py <backfill_run_id>

@@ -2,7 +2,6 @@
 
 from talent_matching.resources.airtable import (
     AirtableATSResource,
-    AirtableJobsResource,
     AirtableResource,
 )
 from talent_matching.resources.github import GitHubAPIResource
@@ -16,7 +15,6 @@ from talent_matching.resources.twitter import TwitterAPIResource
 __all__ = [
     "AirtableResource",
     "AirtableATSResource",
-    "AirtableJobsResource",
     "GitHubAPIResource",
     "TwitterAPIResource",
     "LinkedInAPIResource",

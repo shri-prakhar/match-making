@@ -12,12 +12,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from talent_matching.resources.airtable import AirtableResource
+from talent_matching.resources.airtable import AirtableATSResource, AirtableResource
 from talent_matching.utils.airtable_mapper import (
     AIRTABLE_CANDIDATES_WRITEBACK_FIELDS,
     extract_cv_url,
     map_airtable_row_to_raw_candidate,
-    map_airtable_row_to_raw_job,
     normalized_candidate_to_airtable_fields,
     parse_comma_separated,
 )
@@ -177,68 +176,58 @@ class TestMapAirtableRowToRawCandidate:
         assert result["earn_profile_url"] == "https://earn.superteam.fun/profile"
 
 
-class TestMapAirtableRowToRawJob:
-    """Tests for Airtable job record mapping."""
+class TestAirtableATSResourceMapRecord:
+    """Tests for Airtable ATS record mapping (map_ats_record_to_raw_job)."""
 
-    def test_maps_recruiter_guidance_fields(self):
-        """Test that Non Negotiables and Nice-to-have are mapped for LLM normalization."""
-        record = {
-            "id": "recJob123",
-            "fields": {
-                "🔗  Job Description Link": "https://notion.so/Job-abc123",
-                "Hiring Job Title": "Staff Backend Engineer",
-                "Company": "Acme Corp",
-                "Non Negotiables": "5+ years Node.js, TypeScript, PostgreSQL",
-                "Nice-to-have": "Rust, Solana experience",
-                "Projected Salary": "$150k–$200k",
-                "Location": "Remote, Europe",
-            },
-        }
+    @pytest.fixture
+    def ats_resource(self):
+        return AirtableATSResource(
+            base_id="appTEST",
+            table_id="tblATS",
+            api_key="pat_test",
+        )
 
-        result = map_airtable_row_to_raw_job(record)
-
-        assert result["airtable_record_id"] == "recJob123"
-        assert result["job_description_link"] == "https://notion.so/Job-abc123"
-        assert result["job_title_raw"] == "Staff Backend Engineer"
-        assert result["company_name"] == "Acme Corp"
-        assert result["non_negotiables"] == "5+ years Node.js, TypeScript, PostgreSQL"
-        assert result["nice_to_have"] == "Rust, Solana experience"
-        assert result["projected_salary"] == "$150k–$200k"
-        assert result["location_raw"] == "Remote, Europe"
-
-    def test_maps_preferred_location_with_trailing_space(self):
-        """Test that ATS 'Preferred Location ' (trailing space) maps to location_raw."""
+    def test_maps_ats_recruiter_guidance_fields(self, ats_resource):
+        """Test that ATS Non Negotiables and Nice-to-have are mapped."""
         record = {
             "id": "recATS123",
             "fields": {
-                "Hiring Job Title": "Growth Analyst",
-                "Company": "Radarblock",
+                "Open Position (Job Title)": "Staff Backend Engineer",
+                "Company": ["Acme Corp"],
+                "Job Description Link": "https://notion.so/Job-abc",
+                "Job Description Text": "Build APIs.",
+                "Non Negotiables": "5+ years Node.js",
+                "Nice-to-have": "Rust, Solana",
+                "Projected Salary": "$150k–$200k",
+                "Preferred Location": ["Remote", "Europe"],
+                "Level": ["Senior"],
+                "Desired Job Category": ["Engineering"],
+                "Work Set Up Preference": ["Remote"],
+            },
+        }
+        result = ats_resource.map_ats_record_to_raw_job(record)
+        assert result["airtable_record_id"] == "recATS123"
+        assert result["source"] == "airtable_ats"
+        assert result["job_title"] == "Staff Backend Engineer"
+        assert result["company_name"] == "Acme Corp"
+        assert result["non_negotiables"] == "5+ years Node.js"
+        assert result["nice_to_have"] == "Rust, Solana"
+        assert result["projected_salary"] == "$150k–$200k"
+        assert result["location_raw"] == "Remote, Europe"
+        assert result["experience_level_raw"] == "Senior"
+        assert result["job_category_raw"] == "Engineering"
+
+    def test_maps_ats_preferred_location_with_trailing_space(self, ats_resource):
+        """Test that ATS 'Preferred Location ' (trailing space) maps to location_raw."""
+        record = {
+            "id": "recATS456",
+            "fields": {
+                "Open Position (Job Title)": "Growth Analyst",
                 "Preferred Location ": ["Middle East", "Europe", "India"],
             },
         }
-
-        result = map_airtable_row_to_raw_job(record)
-
-        assert result["location_raw"] == "Middle East,Europe,India"
-
-    def test_handles_missing_recruiter_fields(self):
-        """Test that missing recruiter fields do not break mapping."""
-        record = {
-            "id": "recMinimal",
-            "fields": {
-                "Hiring Job Title": "Engineer",
-                "Company": "Startup",
-            },
-        }
-
-        result = map_airtable_row_to_raw_job(record)
-
-        assert result["job_title_raw"] == "Engineer"
-        assert result["company_name"] == "Startup"
-        assert result.get("non_negotiables") is None
-        assert result.get("nice_to_have") is None
-        assert result.get("projected_salary") is None
-        assert result.get("location_raw") is None
+        result = ats_resource.map_ats_record_to_raw_job(record)
+        assert result["location_raw"] == "Middle East, Europe, India"
 
 
 class TestAirtableResource:

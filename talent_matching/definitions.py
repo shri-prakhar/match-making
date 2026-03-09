@@ -40,7 +40,6 @@ from talent_matching.jobs import (
 )
 from talent_matching.resources import (
     AirtableATSResource,
-    AirtableJobsResource,
     AirtableResource,
     GitHubAPIResource,
     LinkedInAPIResource,
@@ -80,14 +79,16 @@ dev_resources = {
         api_key=EnvVar("AIRTABLE_API_KEY"),
         write_api_key=os.getenv("AIRTABLE_WRITE_TOKEN") or None,
     ),
-    # Airtable jobs table (e.g. Customers STT with Job Description Link)
-    "airtable_jobs": AirtableJobsResource(
+    # Job record source: ATS table (airtable_jobs and airtable_ats both point to ATS)
+    "airtable_jobs": AirtableATSResource(
         base_id=EnvVar("AIRTABLE_BASE_ID"),
-        table_id=EnvVar("AIRTABLE_JOBS_TABLE_ID"),
+        table_id=os.getenv("AIRTABLE_ATS_TABLE_ID", "tblrbhITEIBOxwcQV"),
         api_key=EnvVar("AIRTABLE_API_KEY"),
         write_api_key=os.getenv("AIRTABLE_WRITE_TOKEN") or None,
+        matches_table_id=os.getenv("AIRTABLE_MATCHES_TABLE_ID") or None,
+        matches_view_url=os.getenv("AIRTABLE_MATCHES_VIEW_URL") or None,
     ),
-    # ATS table for Job Process / Smart Job Profiles workflow
+    # ATS table for Job Process / Smart Job Profiles workflow (sensor, upload)
     "airtable_ats": AirtableATSResource(
         base_id=EnvVar("AIRTABLE_BASE_ID"),
         table_id=os.getenv("AIRTABLE_ATS_TABLE_ID", "tblrbhITEIBOxwcQV"),

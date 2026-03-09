@@ -6,7 +6,6 @@ Usage:
 
 Requires:
     AIRTABLE_BASE_ID
-    AIRTABLE_JOBS_TABLE_ID
     AIRTABLE_ATS_TABLE_ID
     AIRTABLE_API_KEY or AIRTABLE_SCHEMA_TOKEN
 """
@@ -20,7 +19,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.airtable_create_columns_lib import get_tables_response
 from talent_matching.resources.airtable import AirtableATSResource
-from talent_matching.utils.airtable_mapper import AIRTABLE_JOBS_COLUMN_MAPPING
 
 load_dotenv()
 
@@ -113,13 +111,12 @@ def _print_table_report(
 
 def main() -> int:
     base_id = os.getenv("AIRTABLE_BASE_ID")
-    jobs_table_id = os.getenv("AIRTABLE_JOBS_TABLE_ID")
     ats_table_id = os.getenv("AIRTABLE_ATS_TABLE_ID", "tblrbhITEIBOxwcQV")
     token = _get_token()
 
-    if not base_id or not jobs_table_id or not ats_table_id or not token:
+    if not base_id or not ats_table_id or not token:
         print(
-            "Set AIRTABLE_BASE_ID, AIRTABLE_JOBS_TABLE_ID, AIRTABLE_ATS_TABLE_ID, "
+            "Set AIRTABLE_BASE_ID, AIRTABLE_ATS_TABLE_ID, "
             "and AIRTABLE_API_KEY (or AIRTABLE_SCHEMA_TOKEN) in .env"
         )
         return 1
@@ -127,29 +124,17 @@ def main() -> int:
     data = get_tables_response(base_id, token)
     tables = data.get("tables", [])
 
-    jobs_table = _table_by_id(tables, jobs_table_id)
     ats_table = _table_by_id(tables, ats_table_id)
 
-    if jobs_table is None:
-        print(f"Jobs table not found in schema: {jobs_table_id}")
-        return 1
     if ats_table is None:
         print(f"ATS table not found in schema: {ats_table_id}")
         return 1
 
-    status = 0
-    status |= _print_table_report(
-        "Jobs Table Mapping Check",
-        jobs_table,
-        set(AIRTABLE_JOBS_COLUMN_MAPPING.keys()),
-    )
-    status |= _print_table_report(
+    return _print_table_report(
         "ATS Table Mapping Check",
         ats_table,
         set(AirtableATSResource.ATS_JOB_FIELDS) | ATS_SENSOR_JOB_FIELDS,
     )
-
-    return status
 
 
 if __name__ == "__main__":
