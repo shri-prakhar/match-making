@@ -100,8 +100,16 @@ async def score_candidate_job_fit(
         )
     recruiter_section = "\n\n".join(recruiter_parts) if recruiter_parts else ""
 
+    candidate_json = json.dumps(normalized_candidate, indent=2, default=str)
+    if len(candidate_json) < 200:
+        raise ValueError(
+            f"Candidate profile too thin ({len(candidate_json)} chars) for "
+            f"candidate_id={normalized_candidate.get('id')}. "
+            f"Check normalized_candidates.normalized_json in DB."
+        )
+
     user_content = f"""Candidate Profile (full, normalized):
-{json.dumps(normalized_candidate, indent=2, default=str)}
+{candidate_json}
 
 Job Description (full text):
 {job_description}

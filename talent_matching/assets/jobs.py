@@ -11,6 +11,7 @@ This module defines the asset graph for processing jobs and generating matches:
 """
 
 import asyncio
+import json
 from typing import Any
 
 import numpy as np
@@ -20,6 +21,7 @@ from dagster import (
     AssetIn,
     DataVersion,
     DynamicPartitionsDefinition,
+    Failure,
     Output,
     asset,
 )
@@ -1113,11 +1115,23 @@ def llm_refined_shortlist(
         f"source={desc_source}, len={len(job_description)} chars, "
         f"preview={repr(preview)}"
     )
-    if desc_source in ("empty", "synthesized") and len(job_description) < 100:
-        context.log.warning(
-            f"[llm_refined_shortlist] record_id={record_id} Job description is thin ({len(job_description)} chars, "
-            f"source={desc_source}). LLM may output generic 'no job description' responses. "
-            f"Check raw_jobs.job_description in DB for this partition."
+    if desc_source == "empty":
+        raise Failure(
+            description=(
+                f"Job description is empty for record_id={record_id}. "
+                f"raw_job.job_description={raw_desc_len} chars, "
+                f"normalized_job.job_description={norm_desc_len} chars. "
+                f"Check raw_jobs and normalized_jobs tables in DB for this partition."
+            ),
+        )
+    if desc_source == "synthesized" and len(job_description) < 100:
+        raise Failure(
+            description=(
+                f"Job description is too thin for record_id={record_id} "
+                f"({len(job_description)} chars, source=synthesized). "
+                f"LLM cannot produce meaningful scoring results. "
+                f"Check raw_jobs.job_description in DB for this partition."
+            ),
         )
 
     req_skills = context.resources.matchmaking.get_job_required_skills([job_id_norm])
@@ -1165,29 +1179,51 @@ def llm_refined_shortlist(
 
     async def _score_all() -> list[dict[str, Any]]:
         sem = asyncio.Semaphore(max_concurrent_llm)
+        skipped: list[str] = []
 
         async def limited(
             m: dict[str, Any], c: dict[str, Any]
-        ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]] | None:
             async with sem:
-                result = await _score_one(m, c)
+                cand_id = str(m.get("candidate_id", ""))
+                cand_name = c.get("full_name") or "Unknown"
+                cand_json_len = len(json.dumps(c, default=str))
+                context.log.info(
+                    f"[llm_refined_shortlist] record_id={record_id} Scoring {cand_name} "
+                    f"(id={cand_id}, profile={cand_json_len} chars)"
+                )
+                try:
+                    result = await _score_one(m, c)
+                except ValueError as exc:
+                    context.log.warning(
+                        f"[llm_refined_shortlist] record_id={record_id} Skipping candidate "
+                        f"{cand_name} ({cand_id}): {exc}"
+                    )
+                    skipped.append(cand_id)
+                    return None
                 return (m, c, result)
 
         tasks = [limited(m, c) for m, c in scored_items]
-        results = await asyncio.gather(*tasks)
+        raw_results = await asyncio.gather(*tasks)
+        if skipped:
+            context.log.warning(
+                f"[llm_refined_shortlist] record_id={record_id} Skipped {len(skipped)} "
+                f"candidates due to thin profiles: {skipped}"
+            )
 
         return [
             {
-                "candidate_id": str(m.get("candidate_id", "")),
-                "candidate_name": c.get("full_name") or "Unknown",
-                "fit_score": r.get("fit_score", 0),
-                "pros": r.get("pros") or [],
-                "cons": r.get("cons") or [],
-                "fulfills_all_must_haves": r.get("fulfills_all_must_haves", False),
-                "_match": m,
-                "_result": r,
+                "candidate_id": str(item[0].get("candidate_id", "")),
+                "candidate_name": item[1].get("full_name") or "Unknown",
+                "fit_score": item[2].get("fit_score", 0),
+                "pros": item[2].get("pros") or [],
+                "cons": item[2].get("cons") or [],
+                "fulfills_all_must_haves": item[2].get("fulfills_all_must_haves", False),
+                "_match": item[0],
+                "_result": item[2],
             }
-            for m, c, r in results
+            for item in raw_results
+            if item is not None
         ]
 
     context.log.info(
