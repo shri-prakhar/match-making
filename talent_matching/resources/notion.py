@@ -63,13 +63,20 @@ def _block_to_text(block: dict[str, Any]) -> str:
 
 
 def _extract_site_origin(url: str) -> str | None:
-    """Extract the origin (scheme + host) from a notion.site URL.
+    """Extract the origin (scheme + host) for the public Notion internal API.
 
-    Returns e.g. ``https://cliff-indigo-30c3.notion.site`` or ``None``
-    if the URL is not a notion.site page.
+    - notion.site: returns that origin (e.g. https://cliff-indigo-30c3.notion.site).
+    - notion.so: returns https://www.notion.so so we can try loadPageChunk there too.
+    Returns None only if the URL is not a known Notion host.
     """
-    match = re.match(r"(https?://[^/]*notion\.site)", url, re.I)
-    return match.group(1) if match else None
+    if not url or "notion" not in url.lower():
+        return None
+    site_match = re.match(r"(https?://[^/]*notion\.site)", url, re.I)
+    if site_match:
+        return site_match.group(1)
+    if "notion.so" in url.lower():
+        return "https://www.notion.so"
+    return None
 
 
 def _format_page_id_with_dashes(raw_id: str) -> str:
@@ -81,8 +88,9 @@ def _format_page_id_with_dashes(raw_id: str) -> str:
 def _fetch_public_page_content(page_url: str, page_id: str) -> str | None:
     """Fetch content from a publicly-published Notion page via the internal API.
 
-    Works for pages published to ``*.notion.site`` without requiring the page
-    to be shared with a Notion integration.
+    Works for pages published to the web: ``*.notion.site`` URLs use that origin;
+    ``notion.so`` URLs use https://www.notion.so so the same page (when shared
+    publicly) can be fetched without a Notion integration.
     """
     origin = _extract_site_origin(page_url)
     if not origin:
