@@ -29,6 +29,11 @@ from sqlalchemy import select
 
 from talent_matching.db import get_session
 from talent_matching.llm.operations.embed_text import embed_text
+from talent_matching.llm import (
+    CV_PROMPT_VERSION,
+    EMBED_PROMPT_VERSION,
+    JOB_PROMPT_VERSION,
+)
 from talent_matching.llm.operations.normalize_job import (
     PROMPT_VERSION as NORMALIZE_JOB_PROMPT_VERSION,
 )
@@ -1254,25 +1259,47 @@ def llm_refined_shortlist(
         )
 
     selection = asyncio.run(run_with_interrupt_check(context, _select()))
-    selected_ids = {str(s) for s in selection.get("selected_candidate_ids", [])}
+    selected_ids = selection.get("selected_candidate_ids", [])
 
-    scored_by_id = {s["candidate_id"]: s for s in scored}
+    scored_by_id = {str(s["candidate_id"]): s for s in scored}
     final: list[dict[str, Any]] = []
-    for rank, cand_id in enumerate(selection.get("selected_candidate_ids", []), start=1):
-        s = scored_by_id.get(str(cand_id))
-        if not s:
-            continue
-        m = s["_match"]
-        r = s["_result"]
-        final.append(
-            {
-                **m,
-                "rank": rank,
-                "llm_fit_score": r.get("fit_score"),
-                "strengths": r.get("pros") or None,
-                "red_flags": r.get("cons") or None,
-            }
+
+    if selected_ids:
+        for rank, cand_id in enumerate(selected_ids, start=1):
+            s = scored_by_id.get(str(cand_id))
+            if not s:
+                continue
+            m = s["_match"]
+            r = s["_result"]
+            final.append(
+                {
+                    **m,
+                    "rank": rank,
+                    "llm_fit_score": r.get("fit_score"),
+                    "strengths": r.get("pros") or None,
+                    "red_flags": r.get("cons") or None,
+                }
+            )
+    else:
+        context.log.info(
+            f"[llm_refined_shortlist] record_id={record_id} LLM selected 0; "
+            f"fallback: uploading top 15 by fit_score"
         )
+        scored_sorted = sorted(
+            scored, key=lambda s: s.get("fit_score", 0), reverse=True
+        )
+        for rank, s in enumerate(scored_sorted[:15], start=1):
+            m = s["_match"]
+            r = s["_result"]
+            final.append(
+                {
+                    **m,
+                    "rank": rank,
+                    "llm_fit_score": r.get("fit_score"),
+                    "strengths": r.get("pros") or None,
+                    "red_flags": r.get("cons") or None,
+                }
+            )
 
     fulfills_count = sum(1 for s in scored if s.get("fulfills_all_must_haves"))
     context.log.info(
@@ -1289,6 +1316,8 @@ def llm_refined_shortlist(
 ATS_AI_PROPOSED_FIELD = "AI PROPOSTED CANDIDATES"
 ATS_JOB_STATUS_FIELD = "Job Status"
 ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done"
+ATS_MATCHMAKING_RESULT_FIELD = "Matchmaking Result"
+ATS_MATCHMAKING_LAST_RUN_FIELD = "Matchmaking Last Run"
 
 
 @asset(
@@ -1323,16 +1352,21 @@ def upload_matches_to_ats(
             f"(not Matchmaking Ready); uploading matches but skipping status change"
         )
 
+    from datetime import datetime, timezone
+
+    run_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
     if not matches:
+        context.log.warning(
+            f"[upload_matches_to_ats] record_id={record_id} No suitable candidates found"
+        )
+        no_match_fields: dict[str, Any] = {
+            ATS_MATCHMAKING_RESULT_FIELD: "No suitable candidates found",
+            ATS_MATCHMAKING_LAST_RUN_FIELD: run_timestamp,
+        }
         if should_flip_status:
-            context.log.warning(
-                f"[upload_matches_to_ats] record_id={record_id} No matches; setting status to Matchmaking Done anyway"
-            )
-            ats.update_record(record_id, {ATS_JOB_STATUS_FIELD: ATS_MATCHMAKING_DONE_STATUS})
-        else:
-            context.log.warning(
-                f"[upload_matches_to_ats] record_id={record_id} No matches and status not flippable; skipping"
-            )
+            no_match_fields[ATS_JOB_STATUS_FIELD] = ATS_MATCHMAKING_DONE_STATUS
+        ats.update_record(record_id, no_match_fields)
         return
 
     candidate_norm_ids = [m["candidate_id"] for m in matches]
@@ -1357,36 +1391,19 @@ def upload_matches_to_ats(
     }
 
     sorted_matches = sorted(matches, key=lambda m: m.get("rank", 999))
-    linked_record_ids = []
+    linked_record_ids: list[str] = []
+    matches_for_table: list[dict[str, Any]] = []
+
     for m in sorted_matches:
-        at_id = norm_to_airtable.get(m["candidate_id"])
-        if at_id:
-            linked_record_ids.append(at_id)
-
-    context.log.info(
-        f"[upload_matches_to_ats] record_id={record_id} Mapped {len(linked_record_ids)}/{len(matches)} "
-        f"candidates to Airtable record IDs"
-    )
-
-    fields: dict[str, Any] = {}
-    if should_flip_status:
-        fields[ATS_JOB_STATUS_FIELD] = ATS_MATCHMAKING_DONE_STATUS
-    if linked_record_ids:
-        fields[ATS_AI_PROPOSED_FIELD] = linked_record_ids
-    if ats.matches_view_url:
-        base = ats.matches_view_url.rstrip("?")
-        sep = "&" if "?" in base else "?"
-        # filterHasAnyOf_Job for linked record; value = ATS record ID
-        fields["View Matches"] = f"{base}{sep}filterHasAnyOf_Job={record_id}"
-
-    if fields:
-        ats.update_record(record_id, fields)
-
-    if ats.matches_table_id:
-        matches_for_table = [
-            {
-                "name": norm_to_name.get(m["candidate_id"], "Unknown"),
-                "candidate_airtable_id": norm_to_airtable.get(m["candidate_id"]),
+        cand_key = str(m["candidate_id"])
+        at_id = norm_to_airtable.get(cand_key)
+        if not at_id:
+            continue
+        linked_record_ids.append(at_id)
+        if ats.matches_table_id:
+            matches_for_table.append({
+                "name": norm_to_name.get(cand_key, "Unknown"),
+                "candidate_airtable_id": at_id,
                 "score": m.get("llm_fit_score"),
                 "pros": m.get("strengths"),
                 "cons": m.get("red_flags"),
@@ -1403,11 +1420,35 @@ def upload_matches_to_ats(
                 "location_fit": m.get("location_match_score"),
                 "matching_skills": m.get("matching_skills"),
                 "missing_skills": m.get("missing_skills"),
-            }
-            for m in sorted_matches
-            if norm_to_airtable.get(m["candidate_id"])
-        ]
-        ats.replace_matches_for_job(record_id, matches_for_table)
+                "matchmaking_version": m.get("algorithm_version") or ALGORITHM_VERSION,
+                "cv_normalization_version": CV_PROMPT_VERSION,
+                "job_normalization_version": JOB_PROMPT_VERSION,
+                "vectorization_version": EMBED_PROMPT_VERSION,
+            })
+
+    context.log.info(
+        f"[upload_matches_to_ats] record_id={record_id} Mapped {len(linked_record_ids)}/{len(matches)} "
+        f"candidates to Airtable record IDs"
+    )
+
+    fields: dict[str, Any] = {
+        ATS_MATCHMAKING_RESULT_FIELD: f"{len(linked_record_ids)} candidates proposed",
+        ATS_MATCHMAKING_LAST_RUN_FIELD: run_timestamp,
+    }
+    if should_flip_status:
+        fields[ATS_JOB_STATUS_FIELD] = ATS_MATCHMAKING_DONE_STATUS
+    if linked_record_ids:
+        fields[ATS_AI_PROPOSED_FIELD] = linked_record_ids
+    if ats.matches_view_url:
+        base = ats.matches_view_url.rstrip("?")
+        sep = "&" if "?" in base else "?"
+        fields["View Matches"] = f"{base}{sep}filterHasAnyOf_Job={record_id}"
+
+    if fields:
+        ats.update_record(record_id, fields)
+
+    if ats.matches_table_id and matches_for_table:
+        ats.replace_matches_for_job(record_id, matches_for_table, run_timestamp=run_timestamp)
         context.log.info(
             f"[upload_matches_to_ats] record_id={record_id} Wrote {len(matches_for_table)} records to Matches table"
         )

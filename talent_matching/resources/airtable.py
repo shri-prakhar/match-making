@@ -507,6 +507,8 @@ class AirtableATSResource(ConfigurableResource):
         "Potential Talent Fit NOE",
         "Hired",
         "AI PROPOSTED CANDIDATES",
+        "Matchmaking Result",
+        "Matchmaking Last Run",
     ]
 
     @property
@@ -701,6 +703,10 @@ class AirtableATSResource(ConfigurableResource):
                     "Location Fit": m.get("location_fit"),
                     "Matching Skills": _join(m.get("matching_skills")),
                     "Missing Skills": _join(m.get("missing_skills")),
+                    "Matchmaking Version": m.get("matchmaking_version"),
+                    "CV Normalization Version": m.get("cv_normalization_version"),
+                    "Job Normalization Version": m.get("job_normalization_version"),
+                    "Vectorization Version": m.get("vectorization_version"),
                 }
                 if run_timestamp:
                     fields["Date Created"] = run_timestamp
