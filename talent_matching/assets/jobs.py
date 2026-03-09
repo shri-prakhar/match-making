@@ -624,6 +624,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     code_version="2.9.0",
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
+    op_tags={"dagster/concurrency_key": "matchmaking_vectors"},
     metadata={
         "table": "matches",
         "scoring_weights": {

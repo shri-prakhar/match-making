@@ -91,6 +91,9 @@ concurrency:
         limit: 15
   pools:
     default_limit: 50
+    pool_limits:
+      - pool: "matchmaking_vectors"
+        limit: 3
 
 telemetry:
   enabled: false
