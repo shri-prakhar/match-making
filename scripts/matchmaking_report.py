@@ -27,10 +27,7 @@ from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
-# Same weights as inspect_matches for vector display
-ROLE_WEIGHT = 0.4
-DOMAIN_WEIGHT = 0.35
-CULTURE_WEIGHT = 0.25
+from talent_matching.config.scoring import CULTURE_WEIGHT, DOMAIN_WEIGHT, ROLE_WEIGHT  # noqa: E402
 
 # Max characters of CV to show per candidate (avoid huge output)
 CV_EXCERPT_CHARS = 4000

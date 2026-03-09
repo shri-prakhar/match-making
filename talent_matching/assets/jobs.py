@@ -12,6 +12,7 @@ This module defines the asset graph for processing jobs and generating matches:
 
 import asyncio
 import json
+from datetime import UTC
 from typing import Any
 
 import numpy as np
@@ -27,13 +28,24 @@ from dagster import (
 )
 from sqlalchemy import select
 
+from talent_matching.config.scoring import (
+    COMPENSATION_WEIGHT,
+    CULTURE_WEIGHT,
+    DOMAIN_WEIGHT,
+    LOCATION_WEIGHT,
+    ROLE_WEIGHT,
+    SKILL_FIT_WEIGHT,
+    SKILL_RATING_WEIGHT,
+    SKILL_SEMANTIC_WEIGHT,
+    VECTOR_WEIGHT,
+)
 from talent_matching.db import get_session
-from talent_matching.llm.operations.embed_text import embed_text
 from talent_matching.llm import (
     CV_PROMPT_VERSION,
     EMBED_PROMPT_VERSION,
     JOB_PROMPT_VERSION,
 )
+from talent_matching.llm.operations.embed_text import embed_text
 from talent_matching.llm.operations.normalize_job import (
     PROMPT_VERSION as NORMALIZE_JOB_PROMPT_VERSION,
 )
@@ -600,22 +612,9 @@ def location_prefiltered_candidates(
     return filtered
 
 
-# Notion formula weights: role 40%, domain 35%, culture 25%
-ROLE_WEIGHT = 0.4
-DOMAIN_WEIGHT = 0.35
-CULTURE_WEIGHT = 0.25
 TOP_N_PER_JOB = 30
 ALGORITHM_VERSION = "notion_v3"
 SKILL_MIN_THRESHOLD = 0.30
-
-# Combined score = weighted blend (35% vector, 40% skill fit, 10% comp, 15% location) − seniority deduction
-VECTOR_WEIGHT = 0.35
-SKILL_FIT_WEIGHT = 0.40
-COMPENSATION_WEIGHT = 0.10
-LOCATION_WEIGHT = 0.15
-# When at least one required skill matches: 80% from rating-based coverage, 20% semantic (tie-breaker)
-SKILL_RATING_WEIGHT = 0.8
-SKILL_SEMANTIC_WEIGHT = 0.2  # only applied when there is at least one matching skill
 SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
 
 
@@ -1074,7 +1073,7 @@ def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
     group_name="matching",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="1.3.2",
+    code_version="1.3.3",  # v1.3.3: add used_fallback flag for fallback Matchmaking Result
     metadata={"table": "matches"},
     op_tags={"dagster/concurrency_key": "openrouter_api"},
 )
@@ -1278,6 +1277,7 @@ def llm_refined_shortlist(
                     "llm_fit_score": r.get("fit_score"),
                     "strengths": r.get("pros") or None,
                     "red_flags": r.get("cons") or None,
+                    "used_fallback": False,
                 }
             )
     else:
@@ -1285,9 +1285,7 @@ def llm_refined_shortlist(
             f"[llm_refined_shortlist] record_id={record_id} LLM selected 0; "
             f"fallback: uploading top 15 by fit_score"
         )
-        scored_sorted = sorted(
-            scored, key=lambda s: s.get("fit_score", 0), reverse=True
-        )
+        scored_sorted = sorted(scored, key=lambda s: s.get("fit_score", 0), reverse=True)
         for rank, s in enumerate(scored_sorted[:15], start=1):
             m = s["_match"]
             r = s["_result"]
@@ -1298,6 +1296,7 @@ def llm_refined_shortlist(
                     "llm_fit_score": r.get("fit_score"),
                     "strengths": r.get("pros") or None,
                     "red_flags": r.get("cons") or None,
+                    "used_fallback": True,
                 }
             )
 
@@ -1326,7 +1325,7 @@ ATS_MATCHMAKING_LAST_RUN_FIELD = "Matchmaking Last Run"
     description="Upload top match results to ATS table as linked candidate chips and set Job Status to Matchmaking Done",
     group_name="matching",
     required_resource_keys={"airtable_ats"},
-    code_version="1.3.0",
+    code_version="1.3.1",  # v1.3.1: distinguish fallback "No must-have matches; showing best candidates"
 )
 def upload_matches_to_ats(
     context: AssetExecutionContext,
@@ -1352,9 +1351,9 @@ def upload_matches_to_ats(
             f"(not Matchmaking Ready); uploading matches but skipping status change"
         )
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    run_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    run_timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     if not matches:
         context.log.warning(
@@ -1386,9 +1385,7 @@ def upload_matches_to_ats(
     norm_to_airtable: dict[str, str] = {
         str(row.id): row.airtable_record_id for row in rows if row.airtable_record_id
     }
-    norm_to_name: dict[str, str] = {
-        str(row.id): row.full_name or "Unknown" for row in rows
-    }
+    norm_to_name: dict[str, str] = {str(row.id): row.full_name or "Unknown" for row in rows}
 
     sorted_matches = sorted(matches, key=lambda m: m.get("rank", 999))
     linked_record_ids: list[str] = []
@@ -1401,38 +1398,46 @@ def upload_matches_to_ats(
             continue
         linked_record_ids.append(at_id)
         if ats.matches_table_id:
-            matches_for_table.append({
-                "name": norm_to_name.get(cand_key, "Unknown"),
-                "candidate_airtable_id": at_id,
-                "score": m.get("llm_fit_score"),
-                "pros": m.get("strengths"),
-                "cons": m.get("red_flags"),
-                "rank": m.get("rank"),
-                "combined_score": round(float(m["match_score"]) * 100, 2)
-                if m.get("match_score") is not None
-                else None,
-                "role_similarity": m.get("role_similarity_score"),
-                "domain_similarity": m.get("domain_similarity_score"),
-                "culture_similarity": m.get("culture_similarity_score"),
-                "skills_fit": m.get("skills_match_score"),
-                "compensation_fit": m.get("compensation_match_score"),
-                "experience_fit": m.get("experience_match_score"),
-                "location_fit": m.get("location_match_score"),
-                "matching_skills": m.get("matching_skills"),
-                "missing_skills": m.get("missing_skills"),
-                "matchmaking_version": m.get("algorithm_version") or ALGORITHM_VERSION,
-                "cv_normalization_version": CV_PROMPT_VERSION,
-                "job_normalization_version": JOB_PROMPT_VERSION,
-                "vectorization_version": EMBED_PROMPT_VERSION,
-            })
+            matches_for_table.append(
+                {
+                    "name": norm_to_name.get(cand_key, "Unknown"),
+                    "candidate_airtable_id": at_id,
+                    "score": m.get("llm_fit_score"),
+                    "pros": m.get("strengths"),
+                    "cons": m.get("red_flags"),
+                    "rank": m.get("rank"),
+                    "combined_score": round(float(m["match_score"]) * 100, 2)
+                    if m.get("match_score") is not None
+                    else None,
+                    "role_similarity": m.get("role_similarity_score"),
+                    "domain_similarity": m.get("domain_similarity_score"),
+                    "culture_similarity": m.get("culture_similarity_score"),
+                    "skills_fit": m.get("skills_match_score"),
+                    "compensation_fit": m.get("compensation_match_score"),
+                    "experience_fit": m.get("experience_match_score"),
+                    "location_fit": m.get("location_match_score"),
+                    "matching_skills": m.get("matching_skills"),
+                    "missing_skills": m.get("missing_skills"),
+                    "matchmaking_version": m.get("algorithm_version") or ALGORITHM_VERSION,
+                    "cv_normalization_version": CV_PROMPT_VERSION,
+                    "job_normalization_version": JOB_PROMPT_VERSION,
+                    "vectorization_version": EMBED_PROMPT_VERSION,
+                }
+            )
 
     context.log.info(
         f"[upload_matches_to_ats] record_id={record_id} Mapped {len(linked_record_ids)}/{len(matches)} "
         f"candidates to Airtable record IDs"
     )
 
+    used_fallback = bool(matches and matches[0].get("used_fallback"))
+    result_text = (
+        "No must-have matches; showing best candidates"
+        if used_fallback
+        else f"{len(linked_record_ids)} candidates proposed"
+    )
     fields: dict[str, Any] = {
-        ATS_MATCHMAKING_RESULT_FIELD: f"{len(linked_record_ids)} candidates proposed",
+        ATS_MATCHMAKING_RESULT_FIELD: result_text,
         ATS_MATCHMAKING_LAST_RUN_FIELD: run_timestamp,
     }
     if should_flip_status:

@@ -44,20 +44,20 @@ Compares recruiter-selected candidates (CLIENT INTRODUCTION, Shortlisted Talent,
 
 ### 1. Run Human vs System Analysis Regularly
 
-- **Action:** Add a lightweight job or script that runs `analyze_human_vs_system` for jobs with human selections.
-- **Output:** Store or export summary stats (e.g. "human picks avg rank X, overlap Y%") for trend analysis.
-- **Goal:** Build a dataset of human vs system alignment over time.
+- **Done:** `scripts/batch_analyze_human_vs_system.py` runs `analyze_human_vs_system` for all ATS jobs with human selections.
+- **Output:** JSON summary with per-job stats (avg rank, overlap %, in-top-5/10/15) and aggregates. Use `--output summary.json` to save.
+- **Goal:** Build a dataset of human vs system alignment over time. Run periodically (e.g. weekly) and compare outputs.
 
 ### 2. Weight Tuning Based on Human Data
 
-- **Input:** Use `analyze_human_vs_system` output to identify which score components (role, domain, culture, skills, compensation, location) correlate with human selection.
-- **Action:** If human picks consistently rank higher on e.g. domain similarity, adjust `ROLE_WEIGHT`, `DOMAIN_WEIGHT`, `CULTURE_WEIGHT` in `talent_matching/assets/jobs.py`.
+- **Input:** Use `analyze_human_vs_system` or `batch_analyze_human_vs_system` output to identify which score components (role, domain, culture, skills, compensation, location) correlate with human selection.
+- **Action:** If human picks consistently rank higher on e.g. domain similarity, adjust weights in `talent_matching/config/scoring.py` (ROLE_WEIGHT, DOMAIN_WEIGHT, CULTURE_WEIGHT, VECTOR_WEIGHT, SKILL_FIT_WEIGHT, etc.).
 - **Process:** Change weights → deploy → run matchmaking → analyze new jobs → iterate.
 
 ### 3. Fallback for Zero LLM Selections
 
 - **Done:** When LLM selects 0 candidates (none fulfill must-haves), we now upload top 15 by fit_score. Recruiters still see candidates with pros/cons.
-- **Optional:** Add a "Matchmaking Result" value like "No must-have matches; showing best candidates" when using fallback, to distinguish from "all candidates fulfilled must-haves".
+- **Done:** When LLM selects 0 candidates, Matchmaking Result is set to "No must-have matches; showing best candidates" to distinguish from "X candidates proposed".
 
 ### 4. Matchmaking Last Run on ATS
 
@@ -131,6 +131,7 @@ If `reviewer_notes` contain patterns (e.g. "not enough Solana", "salary too high
 |------|---------|
 | Launch matchmaking run | `poetry run python scripts/launch_matchmaking_via_graphql.py <partition_id>` |
 | Analyze human vs system | `poetry run with-remote-db python scripts/analyze_human_vs_system.py <ats_record_id>` |
+| Batch human vs system | `poetry run with-remote-db python scripts/batch_analyze_human_vs_system.py [--limit N] [--output summary.json]` |
 | Inspect matches for job | `poetry run with-remote-db python scripts/inspect_matches.py <partition_id>` |
 | Add Matchmaking Result column | `poetry run python scripts/add_ats_matchmaking_result_column.py` |
 | Add version columns to Matches | `poetry run python scripts/add_matches_version_columns.py` |

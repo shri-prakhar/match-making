@@ -26,6 +26,17 @@ from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
+from talent_matching.config.scoring import (  # noqa: E402
+    COMPENSATION_WEIGHT,
+    CULTURE_WEIGHT,
+    DOMAIN_WEIGHT,
+    LOCATION_WEIGHT,
+    ROLE_WEIGHT,
+    SKILL_FIT_WEIGHT,
+    SKILL_RATING_WEIGHT,
+    SKILL_SEMANTIC_WEIGHT,
+    VECTOR_WEIGHT,
+)
 from talent_matching.matchmaking.scoring import (  # noqa: E402
     SENIORITY_MAX_DEDUCTION,
     compensation_fit,
@@ -37,17 +48,7 @@ from talent_matching.matchmaking.scoring import (  # noqa: E402
 )
 from talent_matching.resources.matchmaking import MatchmakingResource  # noqa: E402
 
-ROLE_WEIGHT = 0.4
-DOMAIN_WEIGHT = 0.35
-CULTURE_WEIGHT = 0.25
 TOP_N_PER_JOB = 20
-# Combined = 35% vector + 35% skill fit + 10% comp + 20% location − seniority deduction
-VECTOR_WEIGHT = 0.35
-SKILL_FIT_WEIGHT = 0.35
-COMPENSATION_WEIGHT = 0.10
-LOCATION_WEIGHT = 0.20
-SKILL_RATING_WEIGHT = 0.8
-SKILL_SEMANTIC_WEIGHT = 0.2
 
 
 def get_connection():

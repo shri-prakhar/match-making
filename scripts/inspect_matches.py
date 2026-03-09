@@ -30,10 +30,7 @@ load_dotenv()
 # Add project root for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Same weights as matches asset / run_matchmaking_scoring (for vector display)
-ROLE_WEIGHT = 0.4
-DOMAIN_WEIGHT = 0.35
-CULTURE_WEIGHT = 0.25
+from talent_matching.config.scoring import CULTURE_WEIGHT, DOMAIN_WEIGHT, ROLE_WEIGHT  # noqa: E402
 
 
 def get_connection():
