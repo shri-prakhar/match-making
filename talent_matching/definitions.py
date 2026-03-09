@@ -54,6 +54,7 @@ from talent_matching.sensors.airtable_sensor import (
 )
 from talent_matching.sensors.alerting import system_health_sensor
 from talent_matching.sensors.ats_matchmaking_sensor import ats_matchmaking_sensor
+from talent_matching.sensors.ground_truth_sensor import ground_truth_sync_sensor
 from talent_matching.sensors.run_failure_sensor import run_failure_tagger
 
 # Load environment variables from .env file (must be before resource initialization)
@@ -171,6 +172,7 @@ all_schedules = [
 all_sensors = [
     airtable_candidate_sensor,
     ats_matchmaking_sensor,
+    ground_truth_sync_sensor,
     run_failure_tagger,
     system_health_sensor,
 ]

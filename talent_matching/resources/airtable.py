@@ -560,6 +560,44 @@ class AirtableATSResource(ConfigurableResource):
                     break
         return records
 
+    GROUND_TRUTH_FIELDS: ClassVar[list[str]] = [
+        "Potential Talent Fit",
+        "CLIENT INTRODUCTION",
+        "Hired",
+        "Open Position (Job Title)",
+        "Company",
+    ]
+
+    def fetch_all_records_for_ground_truth(self) -> list[dict[str, Any]]:
+        """Fetch all ATS records for ground-truth sync (paginated).
+
+        Returns list of raw Airtable records with only the fields needed
+        for ground_truth_outcomes: Potential Talent Fit, CLIENT INTRODUCTION,
+        Hired, Job Title, Company.
+        """
+        records: list[dict[str, Any]] = []
+        offset: str | None = None
+
+        with httpx.Client(timeout=60.0) as client:
+            while True:
+                params: list[tuple[str, str]] = []
+                for f in self.GROUND_TRUTH_FIELDS:
+                    params.append(("fields[]", f))
+                if offset:
+                    params.append(("offset", offset))
+                response = client.get(
+                    self._base_url,
+                    headers=self._headers,
+                    params=params,
+                )
+                response.raise_for_status()
+                data = response.json()
+                records.extend(data.get("records", []))
+                offset = data.get("offset")
+                if not offset:
+                    break
+        return records
+
     def fetch_record_by_id(self, record_id: str) -> dict[str, Any]:
         """Fetch a single ATS record by ID."""
         with httpx.Client(timeout=30.0) as client:
