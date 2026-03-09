@@ -616,16 +616,12 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     partitions_def=job_partitions,
     ins={
         "location_prefiltered_candidates": AssetIn(),
-        "candidate_vectors": AssetIn(
-            key=["candidate_vectors"],
-            partition_mapping=AllPartitionMapping(),
-        ),
         "normalized_jobs": AssetIn(),
         "job_vectors": AssetIn(),
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.8.0",  # NumPy batch cosine similarity
+    code_version="2.9.0",
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     metadata={
@@ -640,7 +636,6 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
 def matches(
     context: AssetExecutionContext,
     location_prefiltered_candidates: list[dict[str, Any]],
-    candidate_vectors: Any,
     normalized_jobs: Any,
     job_vectors: Any,
 ) -> list[dict[str, Any]]:
@@ -654,45 +649,7 @@ def matches(
         f"[matches] record_id={record_id} Computing matches (vector+skill, top {TOP_N_PER_JOB} per job)"
     )
 
-    # AllPartitionMapping yields dict[partition_key, value]; value per partition is what IO manager returned (dict or list)
-    def _to_candidate_list(x: Any) -> list[dict[str, Any]]:
-        if x is None:
-            return []
-        if isinstance(x, dict):
-            out = []
-            for v in x.values():
-                if isinstance(v, dict) and v:
-                    out.append(v)
-                elif isinstance(v, list):
-                    out.extend(i for i in v if isinstance(i, dict))
-            return out
-        if isinstance(x, list):
-            return [item for item in x if isinstance(item, dict)]
-        return [x] if isinstance(x, dict) else []
-
-    def _to_vector_list(x: Any) -> list[dict[str, Any]]:
-        if x is None:
-            return []
-        if isinstance(x, dict):
-            flat = []
-            for v in x.values():
-                if isinstance(v, list):
-                    flat.extend(v for item in v if isinstance(item, dict))
-                elif isinstance(v, dict):
-                    flat.append(v)
-            return flat
-        if isinstance(x, list):
-            flat = []
-            for item in x:
-                if isinstance(item, list):
-                    flat.extend(i for i in item if isinstance(i, dict))
-                elif isinstance(item, dict):
-                    flat.append(item)
-            return flat
-        return [x] if isinstance(x, dict) else []
-
     normalized_candidates = location_prefiltered_candidates or []
-    candidate_vectors = _to_vector_list(candidate_vectors)
     if not normalized_jobs or not normalized_candidates:
         context.log.info(
             f"[matches] record_id={record_id} Skipping: jobs={bool(normalized_jobs)}, "
@@ -723,18 +680,18 @@ def matches(
         if vec is not None and vt:
             job_vecs_by_raw[raw_id][vt] = vec
 
-    # Build index: raw_candidate_id -> {position_0, position_1, ..., domain, personality}
-    cand_vecs_by_raw: dict[str, dict[str, list[float]]] = {}
-    for rec in candidate_vectors:
-        raw_id = str(rec.get("candidate_id", ""))
-        if not raw_id:
-            continue
-        if raw_id not in cand_vecs_by_raw:
-            cand_vecs_by_raw[raw_id] = {}
-        vt = rec.get("vector_type") or ""
-        vec = rec.get("vector")
-        if vec is not None and vt:
-            cand_vecs_by_raw[raw_id][vt] = vec
+    # Load candidate vectors only for pre-filtered candidates (not all 7k+)
+    raw_cand_ids = list(
+        {
+            str(c.get("raw_candidate_id", ""))
+            for c in normalized_candidates
+            if c.get("raw_candidate_id")
+        }
+    )
+    cand_vecs_by_raw = context.resources.matchmaking.get_candidate_vectors(raw_cand_ids)
+    context.log.info(
+        f"[matches] record_id={record_id} Loaded vectors for {len(cand_vecs_by_raw)}/{len(raw_cand_ids)} candidates"
+    )
 
     # Normalized id lookup (postgres load uses column name "id")
     job_ids = [str(j.get("id", "")) for j in normalized_jobs if j.get("id")]

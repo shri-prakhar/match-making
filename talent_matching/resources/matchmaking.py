@@ -12,6 +12,7 @@ from talent_matching.models.candidates import CandidateSkill, NormalizedCandidat
 from talent_matching.models.enums import RequirementTypeEnum
 from talent_matching.models.jobs import JobRequiredSkill, NormalizedJob
 from talent_matching.models.skills import Skill
+from talent_matching.models.vectors import CandidateVector
 from talent_matching.skills.resolver import get_or_create_skill, load_alias_map
 from talent_matching.utils.airtable_mapper import (
     NORMALIZED_CANDIDATE_SYNCABLE_FIELDS,
@@ -117,6 +118,41 @@ class MatchmakingResource(ConfigurableResource):
                     "years_experience": int(years) if years is not None else None,
                 }
             )
+        return result
+
+    def get_candidate_vectors(
+        self,
+        raw_candidate_ids: list[str],
+    ) -> dict[str, dict[str, list[float]]]:
+        """Load candidate vectors from DB, keyed by raw_candidate_id -> vector_type -> vector.
+
+        Only loads vectors for the specified candidates instead of all 7k+.
+        Used by the matches asset to avoid the AllPartitionMapping OOM.
+
+        Args:
+            raw_candidate_ids: List of raw_candidates.id UUIDs (as strings).
+
+        Returns:
+            Dict mapping raw_candidate_id (str) to {vector_type: vector_list}.
+        """
+        if not raw_candidate_ids:
+            return {}
+        uuids = [UUID(rid) if isinstance(rid, str) else rid for rid in raw_candidate_ids]
+        session = self._get_session()
+        stmt = select(
+            CandidateVector.candidate_id,
+            CandidateVector.vector_type,
+            CandidateVector.vector,
+        ).where(CandidateVector.candidate_id.in_(uuids))
+        rows = session.execute(stmt).all()
+        session.close()
+
+        result: dict[str, dict[str, list[float]]] = {}
+        for cand_id, vtype, vec in rows:
+            cid = str(cand_id)
+            if cid not in result:
+                result[cid] = {}
+            result[cid][vtype] = list(vec)
         return result
 
     def get_normalized_candidate_by_airtable_record_id(
