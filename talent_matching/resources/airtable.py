@@ -606,6 +606,7 @@ class AirtableATSResource(ConfigurableResource):
         self,
         job_ats_record_id: str,
         matches: list[dict[str, Any]],
+        run_timestamp: str | None = None,
     ) -> None:
         """Replace match records for a job in the Matches table.
 
@@ -615,6 +616,7 @@ class AirtableATSResource(ConfigurableResource):
         Args:
             job_ats_record_id: ATS record ID (the job row)
             matches: List of dicts with candidate_airtable_id, score, pros, cons, rank
+            run_timestamp: ISO 8601 timestamp for Date Created on each match record
         """
         if not self.matches_table_id:
             return
@@ -651,17 +653,19 @@ class AirtableATSResource(ConfigurableResource):
                     return "\n".join(str(x) for x in v) if v else ""
                 return str(v)
 
-            records = [
-                {
-                    "fields": {
-                        "Job": [job_ats_record_id],
-                        "Candidate": [m["candidate_airtable_id"]],
-                        "Score": m.get("score"),
-                        "Pros": _join(m.get("pros")),
-                        "Cons": _join(m.get("cons")),
-                        "Rank": m.get("rank"),
-                    }
+            records = []
+            for m in matches:
+                fields: dict[str, Any] = {
+                    "Job": [job_ats_record_id],
+                    "Candidate": [m["candidate_airtable_id"]],
+                    "Score": m.get("score"),
+                    "Pros": _join(m.get("pros")),
+                    "Cons": _join(m.get("cons")),
+                    "Rank": m.get("rank"),
                 }
-                for m in matches
-            ]
-            client.post(url, headers=headers, json={"records": records}).raise_for_status()
+                if run_timestamp:
+                    fields["Date Created"] = run_timestamp
+                records.append({"fields": fields})
+            for i in range(0, len(records), 10):
+                batch = records[i : i + 10]
+                client.post(url, headers=headers, json={"records": batch}).raise_for_status()
