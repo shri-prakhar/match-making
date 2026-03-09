@@ -36,6 +36,7 @@ from talent_matching.skills.github_verification import (
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_candidate_to_airtable_fields
 from talent_matching.utils.dagster_async import run_with_interrupt_check
+from talent_matching.utils.llm_text_validation import require_meaningful_text_fields
 
 # Dynamic partition definition for candidates
 # Each candidate record gets its own partition key (Airtable record ID)
@@ -409,7 +410,7 @@ def _get_proficiency_label(score: int) -> str:
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="pgvector_io",
-    code_version="4.2.0",  # v4.2.0: Canonicalize skill vector keys via alias resolver
+    code_version="4.3.0",  # v4.3.0: require all narrative embedding inputs to be meaningful
     op_tags={
         # Limit concurrent OpenRouter API calls to avoid rate limits
         # Shares concurrency pool with normalized_candidates
@@ -479,13 +480,16 @@ def candidate_vectors(
     # ═══════════════════════════════════════════════════════════════════
     # NARRATIVE VECTORS (pure prose)
     # ═══════════════════════════════════════════════════════════════════
-    texts_to_embed = {}
-
-    texts_to_embed["experience"] = narratives.get("experience") or "No experience narrative"
-    texts_to_embed["domain"] = narratives.get("domain") or "No domain narrative"
-    texts_to_embed["personality"] = narratives.get("personality") or "No personality narrative"
-    texts_to_embed["impact"] = narratives.get("impact") or "No impact narrative"
-    texts_to_embed["technical"] = narratives.get("technical") or "No technical narrative"
+    texts_to_embed = require_meaningful_text_fields(
+        {
+            "experience": narratives.get("experience"),
+            "domain": narratives.get("domain"),
+            "personality": narratives.get("personality"),
+            "impact": narratives.get("impact"),
+            "technical": narratives.get("technical"),
+        },
+        context=f"candidate_vectors record_id={record_id}",
+    )
 
     # ═══════════════════════════════════════════════════════════════════
     # SKILL VECTORS (structured: "Skill: Level - Evidence")

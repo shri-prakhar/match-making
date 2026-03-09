@@ -13,8 +13,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from talent_matching.resources.openrouter import OpenRouterResource
 
+from talent_matching.utils.llm_text_validation import (
+    require_meaningful_text,
+    require_meaningful_text_fields,
+)
+
 # Bump this version when the prompt changes
-PROMPT_VERSION = "1.1.0"
+PROMPT_VERSION = "1.2.0"
 
 # Use a more capable model for reasoning/scoring tasks
 DEFAULT_MODEL = "openai/gpt-4o"
@@ -73,6 +78,11 @@ async def score_candidate_job_fit(
     Returns:
         Dict with fit_score, pros, cons, fulfills_all_must_haves
     """
+    job_description = require_meaningful_text(
+        job_description,
+        field_name="job_description",
+        min_length=100,
+    )
     must_haves_parts = []
     for r in must_have_requirements:
         name = r.get("skill_name", "")
@@ -107,6 +117,21 @@ async def score_candidate_job_fit(
             f"candidate_id={normalized_candidate.get('id')}. "
             f"Check normalized_candidates.normalized_json in DB."
         )
+    normalized_job_json = json.dumps(normalized_job, indent=2, default=str)
+    require_meaningful_text_fields(
+        {
+            "candidate_json": candidate_json,
+            "normalized_job_json": normalized_job_json,
+        },
+        context="score_candidate_job_fit input validation",
+        min_lengths={
+            "candidate_json": 200,
+            "normalized_job_json": 20,
+        },
+        invalid_values={
+            "normalized_job_json": {"{}", "null"},
+        },
+    )
 
     user_content = f"""Candidate Profile (full, normalized):
 {candidate_json}
@@ -115,7 +140,7 @@ Job Description (full text):
 {job_description}
 
 Normalized Job Requirements:
-{json.dumps(normalized_job, indent=2, default=str)}
+{normalized_job_json}
 
 MUST-HAVE SKILLS (candidate must fulfill ALL of these):
 {must_haves_text if must_haves_text else "(None specified)"}

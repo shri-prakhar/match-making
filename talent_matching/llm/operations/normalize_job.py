@@ -9,6 +9,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from talent_matching.models.enums import proficiency_scale_for_prompt
+from talent_matching.utils.llm_text_validation import require_meaningful_text
 
 if TYPE_CHECKING:
     from talent_matching.resources.openrouter import OpenRouterResource
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 # - MAJOR: Breaking changes to output schema
 # - MINOR: New fields or significant prompt improvements
 # - PATCH: Minor wording tweaks or bug fixes
-PROMPT_VERSION = "3.6.0"  # v3.6.0: include recruiter job category and seniority guidance
+PROMPT_VERSION = "3.7.0"  # v3.7.0: validate required job text before building prompt
 
 # Default model for job normalization (cost-effective for extraction)
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -140,6 +141,11 @@ def _build_user_prompt(
     job_category_raw: str | None = None,
     experience_level_raw: str | None = None,
 ) -> str:
+    raw_job_text = require_meaningful_text(
+        raw_job_text,
+        field_name="raw_job_text",
+        min_length=50,
+    )
     parts = [f"Parse this job description:\n\n{raw_job_text}"]
 
     recruiter_fields = [

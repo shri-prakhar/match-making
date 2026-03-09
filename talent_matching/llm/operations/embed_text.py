@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from talent_matching.resources.openrouter import OpenRouterResource
 
+from talent_matching.utils.llm_text_validation import require_meaningful_text_fields
+
 # Version tracking for embedding changes
 PROMPT_VERSION = "1.0.0"
 
@@ -66,6 +68,11 @@ async def embed_text(
         EmbedTextResult with embeddings, usage stats, and model for metadata
     """
     model = model or DEFAULT_MODEL
+    validated_inputs = require_meaningful_text_fields(
+        {f"embed_text[{idx}]": text for idx, text in enumerate(texts)},
+        context="embed_text input validation",
+    )
+    texts = [validated_inputs[f"embed_text[{idx}]"] for idx in range(len(texts))]
 
     response = await openrouter.embed(
         input=texts,

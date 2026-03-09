@@ -71,6 +71,7 @@ from talent_matching.models.raw import RawJob
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
 from talent_matching.utils.airtable_mapper import normalized_job_to_airtable_fields
 from talent_matching.utils.dagster_async import run_with_interrupt_check
+from talent_matching.utils.llm_text_validation import require_meaningful_text_fields
 
 # Dynamic partition definition for jobs (one partition per Airtable job record ID)
 job_partitions = DynamicPartitionsDefinition(name="jobs")
@@ -431,7 +432,7 @@ JOB_NARRATIVE_VECTOR_TYPES = [
     group_name="jobs",
     required_resource_keys={"openrouter"},
     io_manager_key="pgvector_io",
-    code_version="2.3.0",  # v2.3.0: fail fast when normalized jobs lack real narratives
+    code_version="2.4.0",  # v2.4.0: require all job narrative texts to be meaningful
     op_tags={"dagster/concurrency_key": "openrouter_api"},
     metadata={
         "table": "job_vectors",
@@ -459,44 +460,28 @@ def job_vectors(
         )
 
     narratives = normalized_jobs.get("narratives") or {}
-    actual_narratives = [
-        (normalized_jobs.get("narrative_experience") or narratives.get("experience") or "").strip(),
-        (normalized_jobs.get("narrative_domain") or narratives.get("domain") or "").strip(),
-        (
-            normalized_jobs.get("narrative_personality") or narratives.get("personality") or ""
-        ).strip(),
-        (normalized_jobs.get("narrative_impact") or narratives.get("impact") or "").strip(),
-        (normalized_jobs.get("narrative_technical") or narratives.get("technical") or "").strip(),
-        (normalized_jobs.get("narrative_role") or narratives.get("role") or "").strip(),
-    ]
-    actual_narrative_count = sum(1 for text in actual_narratives if text)
-    if actual_narrative_count == 0:
-        raise Failure(
-            description=(
-                f"Normalized job has no narratives for record_id={record_id}; "
-                "cannot produce meaningful vectors."
-            ),
-        )
-
-    # Fallback to top-level narrative_* if present (e.g. from DB load)
-    def _text(key: str, narrative_key: str) -> str:
-        if key == "role_description":
-            return (
-                normalized_jobs.get("narrative_role")
-                or narratives.get("role")
-                or "No role description."
-            )
-        return (
-            normalized_jobs.get(f"narrative_{key}") or narratives.get(key) or f"No {key} narrative."
-        )
+    validated_narratives = require_meaningful_text_fields(
+        {
+            "experience narrative": normalized_jobs.get("narrative_experience")
+            or narratives.get("experience"),
+            "domain narrative": normalized_jobs.get("narrative_domain") or narratives.get("domain"),
+            "personality narrative": normalized_jobs.get("narrative_personality")
+            or narratives.get("personality"),
+            "impact narrative": normalized_jobs.get("narrative_impact") or narratives.get("impact"),
+            "technical narrative": normalized_jobs.get("narrative_technical")
+            or narratives.get("technical"),
+            "role narrative": normalized_jobs.get("narrative_role") or narratives.get("role"),
+        },
+        context=f"job_vectors record_id={record_id}",
+    )
 
     texts_to_embed = [
-        _text("experience", "experience"),
-        _text("domain", "domain"),
-        _text("personality", "personality"),
-        _text("impact", "impact"),
-        _text("technical", "technical"),
-        _text("role_description", "role"),
+        validated_narratives["experience narrative"],
+        validated_narratives["domain narrative"],
+        validated_narratives["personality narrative"],
+        validated_narratives["impact narrative"],
+        validated_narratives["technical narrative"],
+        validated_narratives["role narrative"],
     ]
     vector_types = list(JOB_NARRATIVE_VECTOR_TYPES)
 
@@ -531,7 +516,7 @@ def job_vectors(
             "embedding_model": result.model,
             "vectors_generated": len(result.embeddings),
             "skill_vectors": skill_count,
-            "actual_narrative_count": actual_narrative_count,
+            "actual_narrative_count": len(validated_narratives),
         }
     )
     context.log.info(
