@@ -1064,7 +1064,7 @@ def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
     group_name="matching",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="1.3.1",  # v1.3.1: add debug logging for job description source/length
+    code_version="1.3.2",
     metadata={"table": "matches"},
     op_tags={"dagster/concurrency_key": "openrouter_api"},
 )
@@ -1090,31 +1090,6 @@ def llm_refined_shortlist(
 
     job = normalized_jobs if isinstance(normalized_jobs, dict) else (normalized_jobs or [{}])[0]
     raw_job = raw_jobs if isinstance(raw_jobs, dict) else (raw_jobs or [{}])[0]
-    # #region agent log
-    _log = "/Users/mikehenry/Workspace/Tests/STT-Assignment/.cursor/debug-7525bf.log"
-    import json as _json
-
-    open(_log, "a").write(
-        _json.dumps(
-            {
-                "sessionId": "7525bf",
-                "hypothesisId": "H2,H3",
-                "location": "jobs.llm_refined_shortlist",
-                "message": "inputs extracted",
-                "data": {
-                    "record_id": record_id,
-                    "norm_type": type(normalized_jobs).__name__,
-                    "raw_type": type(raw_jobs).__name__,
-                    "raw_job_keys": list(raw_job.keys())[:15],
-                    "job_keys": list(job.keys())[:15],
-                    "raw_desc_len": len((raw_job.get("job_description") or "").strip()),
-                    "norm_desc_len": len((job.get("job_description") or "").strip()),
-                },
-            }
-        )
-        + "\n"
-    )
-    # #endregion
     job_id_norm = str(job.get("id", ""))
     job_title = job.get("job_title") or job.get("job_category") or "Unknown"
 
@@ -1129,25 +1104,6 @@ def llm_refined_shortlist(
     )
 
     job_description, desc_source = _build_job_description_for_scoring(raw_job, job)
-    # #region agent log
-    open(_log, "a").write(
-        _json.dumps(
-            {
-                "sessionId": "7525bf",
-                "hypothesisId": "H2,H3",
-                "location": "jobs.llm_refined_shortlist",
-                "message": "after _build_job_description_for_scoring",
-                "data": {
-                    "record_id": record_id,
-                    "desc_source": desc_source,
-                    "job_description_len": len(job_description),
-                    "job_description_preview": job_description[:200],
-                },
-            }
-        )
-        + "\n"
-    )
-    # #endregion
     preview = job_description[:200] + ("..." if len(job_description) > 200 else "")
     context.log.info(
         f"[llm_refined_shortlist] record_id={record_id} Job description for scoring: "
@@ -1170,7 +1126,7 @@ def llm_refined_shortlist(
         run_id=context.run_id,
         asset_key="llm_refined_shortlist",
         partition_key=context.partition_key,
-        code_version="1.3.1",
+        code_version="1.3.2",
     )
 
     non_negotiables = (raw_job.get("non_negotiables") or "").strip() or None

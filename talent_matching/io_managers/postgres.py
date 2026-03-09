@@ -332,7 +332,8 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             result = session.execute(stmt).scalar_one_or_none()
             if result:
                 session.close()
-                return self._model_to_dict(result)
+                out = self._model_to_dict(result)
+                return out
             # No row for this partition key (e.g. job partition key passed to normalized_candidates).
             # Fall back to load-all for tables used as "all partitions" by downstream (e.g. matches).
             if table_name == "normalized_candidates":
