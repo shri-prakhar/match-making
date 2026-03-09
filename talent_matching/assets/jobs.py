@@ -1303,7 +1303,11 @@ def upload_matches_to_ats(
 
     session = get_session()
     rows = (
-        session.query(NormalizedCandidate.id, NormalizedCandidate.airtable_record_id)
+        session.query(
+            NormalizedCandidate.id,
+            NormalizedCandidate.airtable_record_id,
+            NormalizedCandidate.full_name,
+        )
         .filter(NormalizedCandidate.id.in_(candidate_norm_ids))
         .all()
     )
@@ -1311,6 +1315,9 @@ def upload_matches_to_ats(
 
     norm_to_airtable: dict[str, str] = {
         str(row.id): row.airtable_record_id for row in rows if row.airtable_record_id
+    }
+    norm_to_name: dict[str, str] = {
+        str(row.id): row.full_name or "Unknown" for row in rows
     }
 
     sorted_matches = sorted(matches, key=lambda m: m.get("rank", 999))
@@ -1342,6 +1349,7 @@ def upload_matches_to_ats(
     if ats.matches_table_id:
         matches_for_table = [
             {
+                "name": norm_to_name.get(m["candidate_id"], "Unknown"),
                 "candidate_airtable_id": norm_to_airtable.get(m["candidate_id"]),
                 "score": m.get("llm_fit_score"),
                 "pros": m.get("strengths"),

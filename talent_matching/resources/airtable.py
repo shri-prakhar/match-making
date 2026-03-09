@@ -656,6 +656,7 @@ class AirtableATSResource(ConfigurableResource):
             records = []
             for m in matches:
                 fields: dict[str, Any] = {
+                    "Name": m.get("name", ""),
                     "Job": [job_ats_record_id],
                     "Candidate": [m["candidate_airtable_id"]],
                     "Score": m.get("score"),
