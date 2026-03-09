@@ -81,7 +81,7 @@ concurrency:
     tag_concurrency_limits:
       - key: "dagster/concurrency_limit"
         value: "matchmaking"
-        limit: 1
+        limit: 5
       - key: "dagster/job_name"
         value: "candidate_pipeline"
         limit: 15
