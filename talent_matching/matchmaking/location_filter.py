@@ -397,3 +397,29 @@ def candidate_matches_location(candidate: dict, job_locations: list[str]) -> boo
             return True
 
     return False
+
+
+def candidate_passes_location_or_timezone(
+    candidate: dict,
+    job_locations: list[str],
+    job_timezone_requirements: str | None,
+    max_hours_adjacent: float = 2.0,
+) -> bool:
+    """True if candidate passes location filter or is in same/adjacent timezone.
+
+    Uses existing candidate_matches_location for exact/region match. When the job has
+    timezone_requirements (from normalized_jobs), also allows candidates whose timezone
+    is within max_hours_adjacent of the job (reuses scoring.timezones_same_or_adjacent).
+    """
+    if candidate_matches_location(candidate, job_locations):
+        return True
+    if not job_timezone_requirements or not (job_timezone_requirements or "").strip():
+        return False
+    from talent_matching.matchmaking.scoring import timezones_same_or_adjacent
+
+    cand_tz = candidate.get("timezone")
+    return timezones_same_or_adjacent(
+        cand_tz,
+        job_timezone_requirements,
+        max_hours_diff=max_hours_adjacent,
+    )

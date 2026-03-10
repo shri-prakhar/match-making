@@ -55,7 +55,7 @@ from talent_matching.llm.operations.normalize_job import (
 from talent_matching.llm.operations.score_candidate_job_fit import score_candidate_job_fit
 from talent_matching.llm.operations.select_final_shortlist import select_final_shortlist
 from talent_matching.matchmaking.location_filter import (
-    candidate_matches_location,
+    candidate_passes_location_or_timezone,
     parse_job_preferred_locations,
 )
 from talent_matching.matchmaking.scoring import (
@@ -78,6 +78,28 @@ job_partitions = DynamicPartitionsDefinition(name="jobs")
 
 MIN_RAW_JOB_DESCRIPTION_LEN = 100
 MIN_NORMALIZED_JOB_DESCRIPTION_LEN = 50
+
+
+def resolve_job_ids_for_required_skills(
+    normalized_jobs: list[dict[str, Any]],
+    record_id: str | None,
+    get_job_id_by_airtable_record_id: Any,
+) -> list[str]:
+    """Build list of normalized job UUIDs for fetching job_required_skills.
+
+    When normalized_jobs and matches run in the same run, the upstream returns the
+    asset payload (no DB "id"). We must resolve job id from DB by partition so
+    required skills are always loaded. This helper encapsulates that logic for
+    testability.
+    """
+    job_ids: list[str] = []
+    for j in normalized_jobs:
+        jid = j.get("id")
+        if not jid and record_id:
+            jid = get_job_id_by_airtable_record_id(record_id)
+        if jid:
+            job_ids.append(str(jid))
+    return job_ids
 
 
 @asset(
@@ -644,7 +666,14 @@ def location_prefiltered_candidates(
         )
         return eligible
 
-    filtered = [c for c in eligible if candidate_matches_location(c, job_locations)]
+    job_timezone = (
+        (normalized_jobs or {}).get("timezone_requirements")
+        if isinstance(normalized_jobs, dict)
+        else None
+    )
+    filtered = [
+        c for c in eligible if candidate_passes_location_or_timezone(c, job_locations, job_timezone)
+    ]
     loc_preview = (location_raw or "")[:50] + ("..." if len(location_raw or "") > 50 else "")
     context.log.info(
         f"[location_prefiltered_candidates] record_id={record_id} Location filter "
@@ -668,7 +697,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.11.0",  # v2.11.0: add low-info metadata and cap matches concurrency
+    code_version="2.12.0",  # v2.12.0: location prefilter allows same/adjacent timezone
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={
@@ -744,11 +773,16 @@ def matches(
         f"[matches] record_id={record_id} Loaded vectors for {len(cand_vecs_by_raw)}/{len(raw_cand_ids)} candidates"
     )
 
-    # Normalized id lookup (postgres load uses column name "id")
-    job_ids = [str(j.get("id", "")) for j in normalized_jobs if j.get("id")]
+    # Normalized id lookup. When normalized_jobs and matches run in the same run, the upstream
+    # returns the asset payload (no DB "id"). Resolve job id from DB by partition so required
+    # skills are always loaded (see resolve_job_ids_for_required_skills and unit test).
+    matchmaking = context.resources.matchmaking
+    job_ids = resolve_job_ids_for_required_skills(
+        normalized_jobs, record_id, matchmaking.get_job_id_by_airtable_record_id
+    )
     cand_ids = [str(c.get("id", "")) for c in normalized_candidates if c.get("id")]
-    job_required_skills = context.resources.matchmaking.get_job_required_skills(job_ids)
-    candidate_skills_map = context.resources.matchmaking.get_candidate_skills(cand_ids)
+    job_required_skills = matchmaking.get_job_required_skills(job_ids)
+    candidate_skills_map = matchmaking.get_candidate_skills(cand_ids)
 
     match_results: list[dict[str, Any]] = []
     low_info_matchmaking = False
@@ -756,9 +790,12 @@ def matches(
     no_job_category = False
     for job in normalized_jobs:
         job_id_norm = job.get("id")
+        if not job_id_norm and record_id:
+            job_id_norm = matchmaking.get_job_id_by_airtable_record_id(record_id)
         raw_job_id = str(job.get("raw_job_id", ""))
         if not job_id_norm or not raw_job_id:
             continue
+        job_id_norm = str(job_id_norm)
         jvecs = job_vecs_by_raw.get(raw_job_id, {})
         job_role_vec = jvecs.get("role_description")
         job_domain_vec = jvecs.get("domain")

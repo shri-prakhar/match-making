@@ -2,6 +2,7 @@
 
 from talent_matching.matchmaking.location_filter import (
     candidate_matches_location,
+    candidate_passes_location_or_timezone,
     parse_job_preferred_locations,
 )
 
@@ -133,3 +134,53 @@ class TestCandidateMatchesLocation:
         assert candidate_matches_location(candidate, ["Europe"]) is True
         assert candidate_matches_location(candidate, ["GERMANY"]) is True
         assert candidate_matches_location(candidate, ["Munich"]) is True
+
+
+class TestCandidatePassesLocationOrTimezone:
+    """Tests for candidate_passes_location_or_timezone (location or same/adjacent timezone)."""
+
+    def test_location_match_passes_even_without_job_timezone(self):
+        candidate = {
+            "location_city": "Shanghai",
+            "location_country": "China",
+            "timezone": "Asia/Shanghai",
+        }
+        assert candidate_passes_location_or_timezone(candidate, ["Shanghai"], None) is True
+
+    def test_same_timezone_passes_when_location_does_not_match(self):
+        # Job Shanghai; candidate in Hong Kong (same UTC+8) but not exact location match
+        candidate = {
+            "location_city": "Hong Kong",
+            "location_country": "Hong Kong",
+            "timezone": "Asia/Hong_Kong",
+        }
+        assert candidate_matches_location(candidate, ["Shanghai"]) is False
+        assert (
+            candidate_passes_location_or_timezone(candidate, ["Shanghai"], "Asia/Shanghai") is True
+        )
+
+    def test_adjacent_timezone_passes_within_two_hours(self):
+        # Job UTC+8 (Shanghai); candidate UTC+7 (Bangkok) = 1 hour diff
+        candidate = {
+            "location_city": "Bangkok",
+            "location_country": "Thailand",
+            "timezone": "Asia/Bangkok",
+        }
+        assert candidate_passes_location_or_timezone(candidate, ["Shanghai"], "UTC+8") is True
+
+    def test_far_timezone_fails(self):
+        candidate = {
+            "location_city": "New York",
+            "location_country": "USA",
+            "timezone": "America/New_York",
+        }
+        assert candidate_passes_location_or_timezone(candidate, ["Shanghai"], "UTC+8") is False
+
+    def test_no_job_timezone_requirements_only_location_match(self):
+        candidate = {
+            "location_city": "Hong Kong",
+            "location_country": "Hong Kong",
+            "timezone": "Asia/Hong_Kong",
+        }
+        assert candidate_passes_location_or_timezone(candidate, ["Shanghai"], None) is False
+        assert candidate_passes_location_or_timezone(candidate, ["Shanghai"], "") is False

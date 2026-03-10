@@ -4,7 +4,9 @@ Used by the matches asset (talent_matching.assets.jobs) and by
 scripts/run_matchmaking_scoring.py so scoring logic stays in one place.
 """
 
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 
@@ -81,6 +83,73 @@ def compensation_fit(
     return min(1.0, overlap)
 
 
+def parse_timezone_to_offset_hours(s: str | None) -> float | None:
+    """Parse a timezone string to a UTC offset in hours.
+
+    Handles UTC offset format ("UTC-5", "UTC+05:30", "GMT+1") and
+    IANA timezone names ("America/New_York", "Asia/Kolkata").
+    """
+    if not s or not (stripped := s.strip()) or stripped.lower() == "null":
+        return None
+    upper = stripped.upper().replace(" ", "")
+    if upper.startswith(("UTC", "GMT")):
+        prefix_len = 3
+        rest = upper[prefix_len:].strip()
+        if not rest or rest == "0":
+            return 0.0
+        sign = 1 if rest.startswith("+") else -1
+        rest = rest.lstrip("+-")
+        if ":" in rest:
+            parts = rest.split(":")
+            if parts[0].isdigit() and parts[1].isdigit():
+                return sign * (int(parts[0]) + int(parts[1]) / 60)
+        num = rest.split("/")[0].split("-")[0].split("+")[0]
+        if num.isdigit():
+            return sign * float(num)
+        return None
+    if "/" not in stripped:
+        return None
+    zi = ZoneInfo(stripped)
+    offset = datetime.now(zi).utcoffset()
+    if offset is not None:
+        return offset.total_seconds() / 3600
+    return None
+
+
+def timezones_same_or_adjacent(
+    candidate_timezone: str | None,
+    job_timezone_requirements: str | None,
+    max_hours_diff: float = 2.0,
+) -> bool:
+    """True if candidate timezone is within max_hours_diff of job timezone (same or adjacent).
+
+    Uses the same parsing as location_score. For job ranges (e.g. "UTC-5 to UTC+1"),
+    checks whether candidate offset is within max_hours_diff of the range.
+    """
+    c_tz = parse_timezone_to_offset_hours(candidate_timezone)
+    j_tz_str = (job_timezone_requirements or "").strip()
+    if not j_tz_str:
+        return False
+    if " to " in j_tz_str:
+        parts = j_tz_str.split(" to ")
+        j_lo = parse_timezone_to_offset_hours(parts[0]) if parts else None
+        j_hi = parse_timezone_to_offset_hours(parts[1]) if len(parts) > 1 else None
+    else:
+        single = parse_timezone_to_offset_hours(j_tz_str)
+        j_lo = single
+        j_hi = single
+    if c_tz is None or (j_lo is None and j_hi is None):
+        return False
+    lo: float = j_lo if j_lo is not None else (j_hi or 0.0)
+    hi: float = j_hi if j_hi is not None else (j_lo or 0.0)
+    if lo > hi:
+        lo, hi = hi, lo
+    if lo <= c_tz <= hi:
+        return True
+    diff = min(abs(c_tz - lo), abs(c_tz - hi))
+    return diff <= max_hours_diff
+
+
 def location_score(
     candidate_timezone: str | None,
     job_timezone_requirements: str | None,
@@ -101,50 +170,14 @@ def location_score(
     if not candidate_timezone or not job_timezone_requirements:
         return 0.5 * weight
 
-    def parse_tz(s: str) -> float | None:
-        """Parse a timezone string to a UTC offset in hours.
-
-        Handles UTC offset format ("UTC-5", "UTC+05:30", "GMT+1") and
-        IANA timezone names ("America/New_York", "Asia/Kolkata").
-        """
-        stripped = s.strip()
-        if not stripped or stripped.lower() == "null":
-            return None
-        upper = stripped.upper().replace(" ", "")
-        if upper.startswith(("UTC", "GMT")):
-            prefix_len = 3
-            rest = upper[prefix_len:].strip()
-            if not rest or rest == "0":
-                return 0.0
-            sign = 1 if rest.startswith("+") else -1
-            rest = rest.lstrip("+-")
-            if ":" in rest:
-                parts = rest.split(":")
-                if parts[0].isdigit() and parts[1].isdigit():
-                    return sign * (int(parts[0]) + int(parts[1]) / 60)
-            num = rest.split("/")[0].split("-")[0].split("+")[0]
-            if num.isdigit():
-                return sign * float(num)
-            return None
-        if "/" not in stripped:
-            return None
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
-        zi = ZoneInfo(stripped)
-        offset = datetime.now(zi).utcoffset()
-        if offset is not None:
-            return offset.total_seconds() / 3600
-        return None
-
-    c_tz = parse_tz(candidate_timezone)
+    c_tz = parse_timezone_to_offset_hours(candidate_timezone)
     j_tz_str = (job_timezone_requirements or "").strip()
     if " to " in j_tz_str:
         parts = j_tz_str.split(" to ")
-        j_lo = parse_tz(parts[0]) if parts else None
-        j_hi = parse_tz(parts[1]) if len(parts) > 1 else None
+        j_lo = parse_timezone_to_offset_hours(parts[0]) if parts else None
+        j_hi = parse_timezone_to_offset_hours(parts[1]) if len(parts) > 1 else None
     else:
-        single = parse_tz(j_tz_str)
+        single = parse_timezone_to_offset_hours(j_tz_str)
         j_lo = single
         j_hi = single
     if c_tz is None or (j_lo is None and j_hi is None):
