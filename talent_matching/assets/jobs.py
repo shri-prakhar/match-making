@@ -55,7 +55,12 @@ from talent_matching.llm.operations.normalize_job import (
 from talent_matching.llm.operations.score_candidate_job_fit import score_candidate_job_fit
 from talent_matching.llm.operations.select_final_shortlist import select_final_shortlist
 from talent_matching.matchmaking.location_filter import (
+    MIN_POOL_SIZE,
+    candidate_matches_country,
+    candidate_matches_region,
     candidate_passes_location_or_timezone,
+    job_locations_to_countries,
+    job_locations_to_regions,
     parse_job_preferred_locations,
 )
 from talent_matching.matchmaking.scoring import (
@@ -671,13 +676,38 @@ def location_prefiltered_candidates(
         if isinstance(normalized_jobs, dict)
         else None
     )
+    loc_preview = (location_raw or "")[:50] + ("..." if len(location_raw or "") > 50 else "")
+
+    # Step 1: strict (exact location or same/adjacent timezone)
     filtered = [
         c for c in eligible if candidate_passes_location_or_timezone(c, job_locations, job_timezone)
     ]
-    loc_preview = (location_raw or "")[:50] + ("..." if len(location_raw or "") > 50 else "")
+    if len(filtered) >= MIN_POOL_SIZE:
+        context.log.info(
+            f"[location_prefiltered_candidates] record_id={record_id} Location filter "
+            f"'{loc_preview}': strict pass, {len(filtered)}/{len(eligible)} candidates"
+        )
+        return filtered
+
+    # Step 2: country expansion
+    allowed_countries = job_locations_to_countries(job_locations)
+    if allowed_countries:
+        filtered = [c for c in eligible if candidate_matches_country(c, allowed_countries)]
+        if len(filtered) >= MIN_POOL_SIZE:
+            context.log.info(
+                f"[location_prefiltered_candidates] record_id={record_id} Location filter "
+                f"'{loc_preview}': country expansion, {len(filtered)}/{len(eligible)} candidates"
+            )
+            return filtered
+
+    # Step 3: region expansion (filtered still has step-2 result; only refine if we have region mapping)
+    allowed_regions = job_locations_to_regions(job_locations)
+    if allowed_regions:
+        filtered = [c for c in eligible if candidate_matches_region(c, allowed_regions)]
+
     context.log.info(
         f"[location_prefiltered_candidates] record_id={record_id} Location filter "
-        f"'{loc_preview}': {len(filtered)}/{len(eligible)} candidates pass"
+        f"'{loc_preview}': region expansion (or final), {len(filtered)}/{len(eligible)} candidates"
     )
     return filtered
 

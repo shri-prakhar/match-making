@@ -22,6 +22,7 @@ from talent_matching.assets import candidates, jobs, social
 from talent_matching.io_managers import PgVectorIOManager, PostgresMetricsIOManager
 from talent_matching.jobs import (
     ats_matchmaking_pipeline_job,
+    backfill_candidate_region_job,
     candidate_ingest_job,
     candidate_pipeline_job,
     candidate_vectors_job,
@@ -160,6 +161,7 @@ all_jobs = [
     sample_candidates_job,
     skill_normalization_job,
     timezone_lookup_job,
+    backfill_candidate_region_job,
     # ATS-driven pipeline (sensor-triggered)
     ats_matchmaking_pipeline_job,
     # Backfill: normalization + scoring without LLM refinement

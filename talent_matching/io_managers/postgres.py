@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from talent_matching.db import get_engine, get_session
+from talent_matching.matchmaking.location_filter import get_region_for_country
 from talent_matching.models import (
     Match,
     NormalizedCandidate,
@@ -465,6 +466,12 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             location_country = str(location) if location else None
             location_region = None
             timezone = None
+
+        # Infer region from country when missing (aligns with matchmaking location_filter)
+        if location_country and (not location_region or not str(location_region).strip()):
+            inferred = get_region_for_country(location_country)
+            if inferred:
+                location_region = inferred
 
         # Inline timezone resolution: cache lookup -> LLM fallback -> null
         timezone = resolve_candidate_timezone(session, location_city, location_country, timezone)

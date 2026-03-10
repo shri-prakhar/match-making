@@ -6,6 +6,9 @@ and handles region-to-country mapping (e.g. job "Europe" matches candidate "Germ
 
 NO_FILTER_VALUES: frozenset[str] = frozenset({"global", "no hard requirements"})
 
+# Minimum candidate pool size before we stop expanding (strict -> country -> region).
+MIN_POOL_SIZE = 15
+
 # Region -> set of country names (lowercase). Used when job has "Europe" and candidate has "Germany".
 REGION_COUNTRIES: dict[str, set[str]] = {
     "europe": {
@@ -303,7 +306,8 @@ REGION_COUNTRIES: dict[str, set[str]] = {
     },
 }
 
-# Country aliases for flexible matching (alias -> canonical lowercase)
+# Country aliases for flexible matching (alias -> canonical lowercase).
+# Includes city/location keys so job strings like "Shanghai" resolve to a country.
 COUNTRY_ALIASES: dict[str, str] = {
     "usa": "united states",
     "us": "united states",
@@ -312,7 +316,42 @@ COUNTRY_ALIASES: dict[str, str] = {
     "kl": "malaysia",  # Kuala Lumpur is in Malaysia
     "kuala lumpur": "malaysia",
     "viet nam": "vietnam",
+    # Cities / common job preferred locations -> country
+    "shanghai": "china",
+    "beijing": "china",
+    "hong kong": "hong kong",
+    "singapore": "singapore",
+    "tokyo": "japan",
+    "london": "united kingdom",
+    "new york": "united states",
+    "munich": "germany",
+    "dubai": "united arab emirates",
+    "berlin": "germany",
+    "paris": "france",
+    "amsterdam": "netherlands",
+    "sydney": "australia",
+    "melbourne": "australia",
+    "bangalore": "india",
+    "mumbai": "india",
+    "seoul": "south korea",
+    "taipei": "taiwan",
+    "bangkok": "thailand",
+    "jakarta": "indonesia",
+    "manila": "philippines",
+    "ho chi minh city": "vietnam",
+    "san francisco": "united states",
+    "toronto": "canada",
+    "zurich": "switzerland",
+    "tel aviv": "israel",
 }
+
+# Country -> region (lowercase). Built from REGION_COUNTRIES; first region wins for duplicates.
+_COUNTRY_TO_REGION: dict[str, str] = {}
+for _region in sorted(REGION_COUNTRIES.keys()):
+    for _c in REGION_COUNTRIES[_region]:
+        if _c not in _COUNTRY_TO_REGION:
+            _COUNTRY_TO_REGION[_c] = _region
+COUNTRY_TO_REGION: dict[str, str] = _COUNTRY_TO_REGION
 
 
 def _normalize(s: str | None) -> str:
@@ -326,6 +365,88 @@ def _resolve_country(s: str) -> str:
     """Resolve alias to canonical country name."""
     key = _normalize(s)
     return COUNTRY_ALIASES.get(key, key)
+
+
+def get_region_for_country(country: str) -> str | None:
+    """Return the region (lowercase) for a country, or None if unknown.
+
+    Uses COUNTRY_TO_REGION; normalizes input via _resolve_country.
+    """
+    if not country or not (country := (country or "").strip()):
+        return None
+    canonical = _resolve_country(country)
+    key = _normalize(canonical)
+    return COUNTRY_TO_REGION.get(key)
+
+
+def job_locations_to_countries(job_locations: list[str]) -> set[str]:
+    """Resolve job location strings to a set of canonical (lowercase) countries.
+
+    For each normalized job location: if it is a REGION_COUNTRIES key, add all
+    countries in that region; else if it is in COUNTRY_ALIASES (e.g. city), add
+    that country; else treat as country (via _resolve_country) and add it.
+    """
+    out: set[str] = set()
+    for loc in job_locations or []:
+        j = _normalize(loc)
+        if not j:
+            continue
+        if j in REGION_COUNTRIES:
+            out.update(REGION_COUNTRIES[j])
+            continue
+        resolved = _resolve_country(loc)
+        if resolved:
+            out.add(_normalize(resolved))
+    return out
+
+
+def job_locations_to_regions(job_locations: list[str]) -> set[str]:
+    """Resolve job location strings to a set of region names (lowercase).
+
+    Uses job_locations_to_countries then maps each country to its region(s).
+    Returns the set of region names (e.g. 'europe', 'asia').
+    """
+    countries = job_locations_to_countries(job_locations)
+    regions: set[str] = set()
+    for c in countries:
+        r = get_region_for_country(c)
+        if r:
+            regions.add(r)
+    return regions
+
+
+def candidate_matches_country(candidate: dict, allowed_countries: set[str]) -> bool:
+    """True if candidate's location_country (resolved) is in allowed_countries.
+
+    If candidate has no country, returns False (no expansion on missing data).
+    """
+    if not allowed_countries:
+        return False
+    cand_country = candidate.get("location_country")
+    if not cand_country or not str(cand_country).strip():
+        return False
+    resolved = _resolve_country(str(cand_country))
+    key = _normalize(resolved)
+    return key in allowed_countries
+
+
+def candidate_matches_region(candidate: dict, allowed_regions: set[str]) -> bool:
+    """True if candidate's region or country-derived region is in allowed_regions.
+
+    If candidate has location_region, normalize and check. Else if candidate has
+    location_country, resolve to region and check. Otherwise False.
+    """
+    if not allowed_regions:
+        return False
+    cand_region = _normalize(candidate.get("location_region") or "")
+    if cand_region and cand_region in allowed_regions:
+        return True
+    cand_country = candidate.get("location_country")
+    if cand_country and str(cand_country).strip():
+        r = get_region_for_country(str(cand_country))
+        if r and r in allowed_regions:
+            return True
+    return False
 
 
 def parse_job_preferred_locations(location_raw: str | None) -> list[str] | None:

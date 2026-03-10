@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 # - MINOR: New fields or significant prompt improvements
 # - PATCH: Minor wording tweaks or bug fixes
 PROMPT_VERSION = (
-    "5.1.0"  # v5.1.0: Canonical per-level proficiency scale (aligned with job min_level)
+    "5.2.0"  # v5.2.0: When country is present, always set region (infer from country if not stated)
 )
 
 # Default model for CV normalization (cost-effective for extraction)
@@ -135,6 +135,7 @@ _SYSTEM_PROMPT_TEMPLATE = """You are a CV parser. Extract and normalize the foll
 
 IMPORTANT:
 - Extract email and phone if present in the CV
+- When "country" is present in location, always set "region". If the CV does not state the region, infer it from the country (e.g. China -> Asia, Germany -> Europe, United States -> North America). Use consistent region names: Europe, North America, South America, Asia, APAC, EMEA, Middle East, Southeast Asia, Africa, Australia.
 - skills is an array of objects with "name", "years", "proficiency" (1-10), and "evidence"
 - For experience dates, use YYYY-MM format (e.g., "2023-03"). Use null for end_date if current job
 - For social handles, extract just the username (e.g., "darshan9solanki" not "https://x.com/darshan9solanki")
