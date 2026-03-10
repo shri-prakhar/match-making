@@ -28,6 +28,19 @@ class MatchmakingResource(ConfigurableResource):
     def _get_session() -> Session:
         return get_session()
 
+    def get_job_id_by_airtable_record_id(self, airtable_record_id: str) -> str | None:
+        """Return normalized_jobs.id for the job with this airtable_record_id, or None."""
+        if not airtable_record_id:
+            return None
+        session = self._get_session()
+        row = session.execute(
+            select(NormalizedJob.id).where(
+                NormalizedJob.airtable_record_id == airtable_record_id
+            )
+        ).scalar_one_or_none()
+        session.close()
+        return str(row) if row else None
+
     def get_job_required_skills(
         self,
         job_ids: list[str],
@@ -203,6 +216,7 @@ class MatchmakingResource(ConfigurableResource):
             if f not in ("must_have_skills", "nice_to_have_skills")
         ]
         job: dict[str, Any] = {}
+        job["id"] = str(row.id)
         for name in scalar_fields:
             job[name] = getattr(row, name, None)
 

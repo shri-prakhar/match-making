@@ -807,9 +807,11 @@ def matches(
     # returns the asset payload (no DB "id"). Resolve job id from DB by partition so required
     # skills are always loaded (see resolve_job_ids_for_required_skills and unit test).
     matchmaking = context.resources.matchmaking
-    job_ids = resolve_job_ids_for_required_skills(
-        normalized_jobs, record_id, matchmaking.get_job_id_by_airtable_record_id
-    )
+    def _get_job_id(rid: str) -> str | None:
+        job = matchmaking.get_normalized_job_by_airtable_record_id(rid)
+        return str(job["id"]) if job and job.get("id") else None
+
+    job_ids = resolve_job_ids_for_required_skills(normalized_jobs, record_id, _get_job_id)
     cand_ids = [str(c.get("id", "")) for c in normalized_candidates if c.get("id")]
     job_required_skills = matchmaking.get_job_required_skills(job_ids)
     candidate_skills_map = matchmaking.get_candidate_skills(cand_ids)
@@ -821,7 +823,8 @@ def matches(
     for job in normalized_jobs:
         job_id_norm = job.get("id")
         if not job_id_norm and record_id:
-            job_id_norm = matchmaking.get_job_id_by_airtable_record_id(record_id)
+            fallback = matchmaking.get_normalized_job_by_airtable_record_id(record_id)
+            job_id_norm = fallback.get("id") if fallback else None
         raw_job_id = str(job.get("raw_job_id", ""))
         if not job_id_norm or not raw_job_id:
             continue
