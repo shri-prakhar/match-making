@@ -40,6 +40,7 @@ from talent_matching.models.enums import (
 )
 from talent_matching.models.jobs import JobRequiredSkill
 from talent_matching.models.skills import Skill
+from talent_matching.models.vectors import CandidateVector
 from talent_matching.services.timezone_resolver import resolve_candidate_timezone
 from talent_matching.skills.resolver import get_or_create_skill
 from talent_matching.utils.airtable_mapper import parse_comma_separated
@@ -431,6 +432,30 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
         """Store normalized candidate data using SQLAlchemy ORM."""
         session = self._get_session()
         partition_key = context.partition_key
+
+        # Sentinel: no CV data — remove from DB so they are not considered in matchmaking
+        if data.get("__exclude_from_matchmaking__"):
+            row = session.execute(
+                select(NormalizedCandidate).where(
+                    NormalizedCandidate.airtable_record_id == partition_key
+                )
+            ).scalar_one_or_none()
+            if row:
+                raw_id = row.raw_candidate_id
+                session.execute(
+                    delete(NormalizedCandidate).where(
+                        NormalizedCandidate.airtable_record_id == partition_key
+                    )
+                )
+                session.execute(
+                    delete(CandidateVector).where(CandidateVector.candidate_id == raw_id)
+                )
+                session.commit()
+                context.log.info(
+                    f"Excluded candidate from matchmaking (no CV data): {partition_key}"
+                )
+            session.close()
+            return
 
         # First, get the raw candidate ID
         raw_candidate = session.execute(

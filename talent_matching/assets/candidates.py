@@ -34,7 +34,10 @@ from talent_matching.skills.github_verification import (
     verify_skills_llm,
 )
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
-from talent_matching.utils.airtable_mapper import normalized_candidate_to_airtable_fields
+from talent_matching.utils.airtable_mapper import (
+    normalized_candidate_to_airtable_fields,
+    parse_comma_separated,
+)
 from talent_matching.utils.dagster_async import run_with_interrupt_check
 from talent_matching.utils.llm_text_validation import require_meaningful_text_fields
 
@@ -240,7 +243,7 @@ def raw_candidates(
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="postgres_io",
-    code_version="2.1.1",  # bump after file changes; no logic change
+    code_version="2.2.0",  # v2.2.0: category-aware CV — one run with desired_job_categories concatenated
     op_tags={
         "dagster/concurrency_key": "openrouter_api",
     },
@@ -316,7 +319,7 @@ def normalized_candidates(
 
     if not has_airtable and not has_pdf:
         context.log.warning(
-            f"[normalized_candidates] record_id={record_id} No CV data; skipping LLM normalization"
+            f"[normalized_candidates] record_id={record_id} No CV data; excluding from matchmaking (no LLM, no DB row)"
         )
         context.add_output_metadata(
             {
@@ -328,18 +331,12 @@ def normalized_candidates(
                 "cv_sources": "none",
             }
         )
+        # Sentinel: IO manager will delete any existing normalized_candidate + candidate_vectors for this partition
         return {
+            "__exclude_from_matchmaking__": True,
+            "skip_reason": "no_cv_data",
             "candidate_id": record_id,
             "airtable_record_id": raw_candidates.get("airtable_record_id"),
-            "normalized_json": {
-                "name": raw_candidates.get("full_name", "Unknown"),
-                "years_of_experience": None,
-                "skills": {"languages": [], "frameworks": [], "tools": [], "domains": []},
-                "current_role": None,
-                "location": None,
-                "professional_summary": None,
-            },
-            "model_version": None,
         }
 
     # Log which sources we're using
@@ -359,6 +356,12 @@ def normalized_candidates(
             "Set it in .env or export it before running the pipeline."
         )
 
+    desired_job_categories = parse_comma_separated(raw_candidates.get("desired_job_categories_raw"))
+    if desired_job_categories:
+        context.log.info(
+            f"[normalized_candidates] record_id={record_id} Using {len(desired_job_categories)} desired_job_categories for category-aware prompt"
+        )
+
     # Run with interrupt check so cancellation in the UI exits the step promptly
     # (avoids runs stuck in CANCELING when blocked on OpenRouter).
     result = asyncio.run(
@@ -368,6 +371,7 @@ def normalized_candidates(
                 openrouter,
                 raw_cv_text=cv_text_airtable,
                 cv_text_pdf=cv_text_pdf,
+                desired_job_categories=desired_job_categories or None,
             ),
         )
     )
@@ -410,7 +414,7 @@ def _get_proficiency_label(score: int) -> str:
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="pgvector_io",
-    code_version="4.3.0",  # v4.3.0: require all narrative embedding inputs to be meaningful
+    code_version="4.4.0",  # v4.4.0: skip embeddings when candidate excluded from matchmaking (no CV)
     op_tags={
         # Limit concurrent OpenRouter API calls to avoid rate limits
         # Shares concurrency pool with normalized_candidates
@@ -458,6 +462,22 @@ def candidate_vectors(
     Uses OpenRouter's embeddings API with text-embedding-3-small (1536 dims).
     """
     record_id = context.partition_key
+
+    # No CV data: upstream excluded this candidate from matchmaking; skip LLM and return no vectors
+    if normalized_candidates is None:
+        context.log.info(
+            f"[candidate_vectors] record_id={record_id} No normalized_candidates row; skipping (excluded from matchmaking)"
+        )
+        return []
+    if (
+        normalized_candidates.get("__exclude_from_matchmaking__")
+        or normalized_candidates.get("skip_reason") == "no_cv_data"
+    ):
+        context.log.info(
+            f"[candidate_vectors] record_id={record_id} Excluded from matchmaking (no CV data); skipping embeddings"
+        )
+        return []
+
     openrouter = context.resources.openrouter
 
     # Fail fast if API key is not configured
