@@ -69,7 +69,7 @@ def get_or_create_skill(
         .first()
     )
     if alias_skill_id is not None:
-        return cast(uuid.UUID, alias_skill_id[0])
+        return cast(uuid.UUID, alias_skill_id)
 
     existing = (
         session.execute(select(Skill).where((Skill.slug == slug) | (Skill.name.ilike(name))))
