@@ -306,12 +306,17 @@ class OpenRouterResource(ConfigurableResource):
             "HTTP-Referer": self.site_url,
             "X-Title": self.app_name,
         }
+        logger = get_dagster_logger()
+        logger.info("OpenRouter complete request: %s", request_body)
+
         response = await self._post_with_retry(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json_body=request_body,
         )
         data = response.json()
+
+        logger.info("OpenRouter complete response: %s", data)
 
         # Extract usage from response (always included by OpenRouter)
         usage = data.get("usage", {})
@@ -367,12 +372,17 @@ class OpenRouterResource(ConfigurableResource):
             "HTTP-Referer": self.site_url,
             "X-Title": self.app_name,
         }
+        logger = get_dagster_logger()
+        logger.info("OpenRouter embed request: %s", request_body)
+
         response = await self._post_with_retry(
             "https://openrouter.ai/api/v1/embeddings",
             headers=headers,
             json_body=request_body,
         )
         data = response.json()
+
+        logger.info("OpenRouter embed response: %s", data)
 
         # Extract usage from response
         usage = data.get("usage", {})
