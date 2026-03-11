@@ -157,7 +157,7 @@ def deploy():
         print(f"  Pulling code and rebuilding on {remote_host}...")
         _ssh_cmd(
             remote_host,
-            f"cd {remote_dir} && git pull && docker compose -f {COMPOSE_FILE} up --build -d",
+            f"cd {remote_dir} && git fetch origin && git reset --hard origin/main && docker compose -f {COMPOSE_FILE} up --build -d",
             check=True,
         )
 
