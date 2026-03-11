@@ -16,8 +16,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from dagster import (
-    DefaultSensorStatus,
     DagsterRunStatus,
+    DefaultSensorStatus,
     RunsFilter,
     SensorEvaluationContext,
     SkipReason,
@@ -143,11 +143,11 @@ def _check_backfills(
 
             start_ts = bf.backfill_timestamp
             end_ts = getattr(bf, "backfill_end_timestamp", None) or datetime.now(UTC)
-            if isinstance(start_ts, (int, float)):
+            if isinstance(start_ts, int | float):
                 start_dt = datetime.fromtimestamp(start_ts, tz=UTC)
             else:
                 start_dt = start_ts if hasattr(start_ts, "tzinfo") else datetime.now(UTC)
-            if isinstance(end_ts, (int, float)):
+            if isinstance(end_ts, int | float):
                 end_dt = datetime.fromtimestamp(end_ts, tz=UTC)
             else:
                 end_dt = end_ts if hasattr(end_ts, "tzinfo") else datetime.now(UTC)
@@ -225,7 +225,7 @@ def _check_stuck_runs(
     required_resource_keys={"telegram"},
     default_status=DefaultSensorStatus.STOPPED,  # Enable in UI when Telegram is configured
 )
-def system_health_sensor(context: SensorEvaluationContext):
+def system_health_sensor(context: SensorEvaluationContext) -> SkipReason | None:
     """Evaluate health checks and send Telegram alerts with cooldowns."""
     telegram = context.resources.telegram
     if not telegram.enabled or not telegram.bot_token or not telegram.chat_id:
@@ -243,8 +243,13 @@ def system_health_sensor(context: SensorEvaluationContext):
 
     # Run checks
     body, cursor_data = _check_failure_rate(
-        context, instance, failure_threshold, failure_window_minutes,
-        failure_min_runs, cooldown_minutes, cursor_data,
+        context,
+        instance,
+        failure_threshold,
+        failure_window_minutes,
+        failure_min_runs,
+        cooldown_minutes,
+        cursor_data,
     )
     if body:
         telegram.send_alert("System Alert: High Failure Rate", body)
@@ -258,7 +263,11 @@ def system_health_sensor(context: SensorEvaluationContext):
         return
 
     body, cursor_data = _check_stuck_runs(
-        context, instance, stuck_threshold_minutes, cooldown_minutes, cursor_data,
+        context,
+        instance,
+        stuck_threshold_minutes,
+        cooldown_minutes,
+        cursor_data,
     )
     if body:
         telegram.send_alert("System Alert: Stuck Runs", body)

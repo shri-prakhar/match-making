@@ -12,6 +12,7 @@ Job Status to "Matchmaking Done" on the ATS record.
 """
 
 import json
+from collections.abc import Generator
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -174,7 +175,9 @@ def _ingest_raw_job(
     ),
     required_resource_keys={"airtable_ats", "notion"},
 )
-def ats_matchmaking_sensor(context: SensorEvaluationContext):
+def ats_matchmaking_sensor(
+    context: SensorEvaluationContext,
+) -> Generator[RunRequest, None, SkipReason | None]:
     """Detect ATS jobs ready for matchmaking and trigger the full pipeline.
 
     Uses a cursor to track which records have already been triggered so we
@@ -185,12 +188,18 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
     """
     ats = context.resources.airtable_ats
     notion = context.resources.notion
+    partitions_name = job_partitions.name or "jobs"
 
-    cursor_data: dict = {"triggered": {}}
+    cursor_data: dict[str, object] = {"triggered": {}}
     if context.cursor:
         cursor_data = json.loads(context.cursor)
 
-    triggered_map: dict[str, str] = cursor_data.get("triggered", {})
+    raw_triggered = cursor_data.get("triggered") or {}
+    triggered_map: dict[str, str] = (
+        {k: v for k, v in raw_triggered.items() if isinstance(k, str) and isinstance(v, str)}
+        if isinstance(raw_triggered, dict)
+        else {}
+    )
 
     records = ats.fetch_records_by_status("Matchmaking Ready")
     if not records:
@@ -210,7 +219,7 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
     )
 
     existing_partitions = set(
-        context.instance.get_dynamic_partitions(partitions_def_name=job_partitions.name)
+        context.instance.get_dynamic_partitions(partitions_def_name=partitions_name)
     )
     now_iso = datetime.now(UTC).isoformat()
 
@@ -228,7 +237,7 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
 
         if record_id not in existing_partitions:
             context.instance.add_dynamic_partitions(
-                partitions_def_name=job_partitions.name,
+                partitions_def_name=partitions_name,
                 partition_keys=[record_id],
             )
             context.log.info(f"[ats_matchmaking_sensor] Created partition for {record_id}")
@@ -247,3 +256,4 @@ def ats_matchmaking_sensor(context: SensorEvaluationContext):
     triggered_map = {k: v for k, v in triggered_map.items() if k in current_ready_ids}
 
     context.update_cursor(json.dumps({"triggered": triggered_map}))
+    return None

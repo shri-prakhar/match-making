@@ -1,0 +1,14 @@
+# Lint and Typecheck Before Every Commit
+
+Before every commit, run **linting** and **typechecking**. The agent should run these (or ensure pre-commit does) before committing.
+
+1. **Pre-commit** (runs on `git commit` if `pre-commit install` was run) includes:
+   - **Ruff** (lint + format)
+   - **mypy** (typecheck on `talent_matching`)
+   - Trailing whitespace, end-of-file fixer, YAML check, Dagster code_version check
+
+2. **Manual run** (e.g. before pushing or when not using pre-commit):
+   - `poetry run ruff check . && poetry run ruff format . && poetry run mypy talent_matching`
+   - Or: `poetry run pre-commit run --all-files`
+
+If mypy fails due to pre-existing errors, fix type errors in the code you changed first; the goal is to keep the codebase improving toward a clean mypy run.

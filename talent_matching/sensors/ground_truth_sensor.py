@@ -18,7 +18,7 @@ GROUND_TRUTH_COLUMNS = [
 ]
 
 
-def _extract_linked_ids(fields: dict, column: str) -> list[str]:
+def _extract_linked_ids(fields: dict[str, object], column: str) -> list[str]:
     """Extract linked record IDs from an Airtable linked record field."""
     value = fields.get(column, [])
     if isinstance(value, list):
@@ -108,11 +108,9 @@ def _sync_ground_truth(context: SensorEvaluationContext) -> tuple[int, int]:
     ),
     required_resource_keys={"airtable_ats"},
 )
-def ground_truth_sync_sensor(context: SensorEvaluationContext):
+def ground_truth_sync_sensor(context: SensorEvaluationContext) -> SkipReason:
     """Poll ATS and upsert (job, candidate) pairs into ground_truth_outcomes."""
     context.log.info("[ground_truth_sync_sensor] Starting sync...")
     inserted, updated = _sync_ground_truth(context)
-    context.log.info(
-        f"[ground_truth_sync_sensor] Done: {inserted} inserted, {updated} updated"
-    )
+    context.log.info(f"[ground_truth_sync_sensor] Done: {inserted} inserted, {updated} updated")
     return SkipReason(f"Synced: {inserted} new, {updated} updated")

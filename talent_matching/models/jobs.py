@@ -1,5 +1,6 @@
 """Normalized job models."""
 
+import uuid
 from datetime import date, datetime
 from uuid import uuid4
 
@@ -17,7 +18,8 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from talent_matching.models.base import Base
@@ -62,10 +64,10 @@ class NormalizedJob(Base):
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
-    raw_job_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    raw_job_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("raw_jobs.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -226,17 +228,17 @@ class JobRequiredSkill(Base):
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign keys
-    job_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_jobs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    skill_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("skills.id", ondelete="CASCADE"),
         nullable=False,
     )

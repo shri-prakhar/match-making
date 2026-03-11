@@ -1,5 +1,6 @@
 """Matching results models."""
 
+import uuid
 from datetime import datetime
 from uuid import uuid4
 
@@ -15,7 +16,8 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from talent_matching.models.base import Base
@@ -34,17 +36,17 @@ class Match(Base):
         CheckConstraint("match_score >= 0 AND match_score <= 1", name="ck_match_score_range"),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign keys
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
-    job_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_jobs.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -87,7 +89,7 @@ class Match(Base):
         Enum(MatchStatusEnum, name="match_status_enum"), default=MatchStatusEnum.MATCHED
     )
     reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    reviewed_by: Mapped[UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ═══════════════════════════════════════════════════════════════════

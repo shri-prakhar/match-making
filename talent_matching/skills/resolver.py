@@ -4,6 +4,8 @@ All skill-related lookups and mutations should go through this module to ensure
 consistent alias resolution, slug generation, and vector key naming.
 """
 
+import uuid
+from typing import cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -59,17 +61,23 @@ def get_or_create_skill(
         return None
     slug = _make_slug(name)
 
-    alias_skill_id = session.execute(
-        select(SkillAlias.skill_id).where(func.lower(SkillAlias.alias) == name.lower())
-    ).scalar_one_or_none()
+    alias_skill_id = (
+        session.execute(
+            select(SkillAlias.skill_id).where(func.lower(SkillAlias.alias) == name.lower())
+        )
+        .scalars()
+        .first()
+    )
     if alias_skill_id is not None:
-        return alias_skill_id
+        return cast(uuid.UUID, alias_skill_id[0])
 
-    existing = session.execute(
-        select(Skill).where((Skill.slug == slug) | (Skill.name.ilike(name)))
-    ).scalar_one_or_none()
+    existing = (
+        session.execute(select(Skill).where((Skill.slug == slug) | (Skill.name.ilike(name))))
+        .scalars()
+        .first()
+    )
     if existing:
-        return existing.id
+        return cast(uuid.UUID, existing.id)
 
     stmt = insert(Skill).values(
         id=uuid4(),
@@ -85,4 +93,4 @@ def get_or_create_skill(
     session.flush()
 
     created = session.execute(select(Skill.id).where(Skill.slug == slug)).scalar_one_or_none()
-    return created
+    return cast(uuid.UUID | None, created)

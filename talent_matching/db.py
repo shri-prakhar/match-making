@@ -27,7 +27,7 @@ from sqlalchemy.pool import NullPool
 
 _lock = threading.Lock()
 _engine: Engine | None = None
-_session_factory: sessionmaker | None = None
+_session_factory: sessionmaker[Session] | None = None
 
 
 def _build_url() -> str:
@@ -53,4 +53,5 @@ def get_engine() -> Engine:
 def get_session() -> Session:
     """Create a new session from the shared engine."""
     get_engine()
+    assert _session_factory is not None
     return _session_factory()

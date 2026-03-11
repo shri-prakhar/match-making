@@ -4,11 +4,12 @@ Caches resolved (city, country) -> IANA timezone mappings to avoid
 redundant LLM calls. Many candidates share the same city/country.
 """
 
+import uuid
 from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import DateTime, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from talent_matching.models.base import Base
@@ -20,7 +21,7 @@ class LocationTimezone(Base):
         UniqueConstraint("city", "country", name="uq_location_timezones_city_country"),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     city: Mapped[str | None] = mapped_column(Text, nullable=True)
     country: Mapped[str] = mapped_column(Text, nullable=False)
     region: Mapped[str | None] = mapped_column(Text, nullable=True)

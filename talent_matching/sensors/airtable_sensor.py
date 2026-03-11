@@ -5,6 +5,7 @@ Sensors:
 """
 
 import json
+from collections.abc import Generator
 from datetime import UTC, datetime
 
 from dagster import (
@@ -24,7 +25,9 @@ from talent_matching.jobs import candidate_pipeline_job
     description="Polls Airtable for new or updated candidate records using incremental sync",
     required_resource_keys={"airtable"},
 )
-def airtable_candidate_sensor(context: SensorEvaluationContext):
+def airtable_candidate_sensor(
+    context: SensorEvaluationContext,
+) -> Generator[RunRequest, None, SkipReason | None]:
     """Detect new and updated candidates in Airtable using cursor-based sync.
 
     Cursor format (JSON):
@@ -39,6 +42,7 @@ def airtable_candidate_sensor(context: SensorEvaluationContext):
     - For existing partitions, triggers re-run (Dagster's data versioning handles skip)
     """
     airtable = context.resources.airtable
+    partitions_name = candidate_partitions.name or "candidates"
 
     # Parse cursor (if exists)
     cursor_data = {"initialized": False, "last_sync": None}
@@ -50,7 +54,7 @@ def airtable_candidate_sensor(context: SensorEvaluationContext):
 
     # Get existing partition keys
     existing_partitions = set(
-        context.instance.get_dynamic_partitions(partitions_def_name=candidate_partitions.name)
+        context.instance.get_dynamic_partitions(partitions_def_name=partitions_name)
     )
 
     if not cursor_data.get("initialized"):
@@ -66,7 +70,7 @@ def airtable_candidate_sensor(context: SensorEvaluationContext):
         if new_record_ids:
             context.log.info(f"Adding {len(new_record_ids)} new partitions...")
             context.instance.add_dynamic_partitions(
-                partitions_def_name=candidate_partitions.name,
+                partitions_def_name=partitions_name,
                 partition_keys=new_record_ids,
             )
 
@@ -126,7 +130,7 @@ def airtable_candidate_sensor(context: SensorEvaluationContext):
         # Add new partitions
         if new_records:
             context.instance.add_dynamic_partitions(
-                partitions_def_name=candidate_partitions.name,
+                partitions_def_name=partitions_name,
                 partition_keys=new_records,
             )
 
@@ -153,3 +157,4 @@ def airtable_candidate_sensor(context: SensorEvaluationContext):
                 run_key=f"candidate-update-{record_id}-{current_sync_time}",
                 partition_key=record_id,
             )
+        return None

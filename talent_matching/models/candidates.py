@@ -1,5 +1,6 @@
 """Normalized candidate models - Smart Profiles."""
 
+import uuid
 from datetime import date, datetime
 from uuid import uuid4
 
@@ -17,7 +18,8 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from talent_matching.models.base import Base
@@ -36,10 +38,10 @@ class NormalizedCandidate(Base):
 
     __tablename__ = "normalized_candidates"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
-    raw_candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    raw_candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("raw_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -134,7 +136,7 @@ class NormalizedCandidate(Base):
         default=VerificationStatusEnum.UNVERIFIED,
     )
     verification_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    verified_by: Mapped[UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    verified_by: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ═══════════════════════════════════════════════════════════════════
@@ -193,17 +195,17 @@ class CandidateSkill(Base):
         CheckConstraint("rating >= 1 AND rating <= 10", name="ck_rating_range_10"),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign keys
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
-    skill_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("skills.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -244,12 +246,12 @@ class CandidateExperience(Base):
 
     __tablename__ = "candidate_experiences"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign key
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -309,12 +311,12 @@ class CandidateAttribute(Base):
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign key
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -348,12 +350,12 @@ class CandidateRoleFitness(Base):
         CheckConstraint("fitness_score >= 0 AND fitness_score <= 1", name="ck_fitness_range"),
     )
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign key
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -384,12 +386,12 @@ class CandidateProject(Base):
 
     __tablename__ = "candidate_projects"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign key
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -431,11 +433,11 @@ class CandidateGithubCommitHistory(Base):
     __tablename__ = "candidate_github_commit_history"
     __table_args__ = (UniqueConstraint("candidate_id", name="uq_candidate_github_commit_history"),)
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -458,12 +460,12 @@ class CandidateGithubMetrics(Base):
     __tablename__ = "candidate_github_metrics"
     __table_args__ = (UniqueConstraint("candidate_id", name="uq_candidate_github"),)
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign key
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -497,12 +499,12 @@ class CandidateTwitterMetrics(Base):
     __tablename__ = "candidate_twitter_metrics"
     __table_args__ = (UniqueConstraint("candidate_id", name="uq_candidate_twitter"),)
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign key
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -540,12 +542,12 @@ class CandidateLinkedinMetrics(Base):
     __tablename__ = "candidate_linkedin_metrics"
     __table_args__ = (UniqueConstraint("candidate_id", name="uq_candidate_linkedin"),)
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Foreign key
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("normalized_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )

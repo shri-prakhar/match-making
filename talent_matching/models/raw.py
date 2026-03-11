@@ -1,10 +1,11 @@
 """Raw input data models - direct imports from Airtable."""
 
+import uuid
 from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Enum, Float, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from talent_matching.models.base import Base
@@ -19,7 +20,7 @@ class RawCandidate(Base):
 
     __tablename__ = "raw_candidates"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Source tracking
@@ -96,7 +97,7 @@ class RawJob(Base):
 
     __tablename__ = "raw_jobs"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     airtable_record_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Source tracking

@@ -7,7 +7,7 @@ be used independently for testing and data transformation.
 
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 # Prefix for normalized candidate columns when writing back to Airtable
 NORMALIZED_COLUMN_PREFIX = "(N) "
@@ -162,7 +162,7 @@ def extract_cv_url(cv_field: Any) -> str | None:
     if isinstance(cv_field, list) and cv_field:
         first_attachment = cv_field[0]
         if isinstance(first_attachment, dict):
-            return first_attachment.get("url")
+            return cast(str | None, first_attachment.get("url"))
 
     # String formats
     if isinstance(cv_field, str):
@@ -171,7 +171,7 @@ def extract_cv_url(cv_field: Any) -> str | None:
         # CSV export format: "filename.pdf (https://...)"
         match = re.search(r"\((https?://[^)]+)\)", cv_field)
         if match:
-            return match.group(1)
+            return str(match.group(1))
 
         # Plain URL
         if cv_field.startswith(("http://", "https://")):

@@ -3,6 +3,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -13,17 +14,17 @@ DRAIN_TIMEOUT_SECONDS = 300
 DRAIN_POLL_INTERVAL = 10
 
 
-def remote_ui():
+def remote_ui() -> None:
     script = PROJECT_ROOT / "scripts" / "dagster-remote-ui.sh"
     os.execvp("bash", ["bash", str(script)] + sys.argv[1:])
 
 
-def setup_db():
+def setup_db() -> None:
     script = PROJECT_ROOT / "scripts" / "setup-db-local.sh"
     os.execvp("bash", ["bash", str(script)] + sys.argv[1:])
 
 
-def migrate_dagster():
+def migrate_dagster() -> None:
     """Run Dagster instance migration (fixes concurrency_limits schema). Uses local Postgres."""
     load_dotenv(PROJECT_ROOT / ".env")
     os.chdir(PROJECT_ROOT)
@@ -37,7 +38,7 @@ def migrate_dagster():
     )
 
 
-def local_dev():
+def local_dev() -> None:
     """Run Dagster dev entirely locally: webserver, daemon, and code. Uses local Postgres."""
     load_dotenv(PROJECT_ROOT / ".env")
     os.chdir(PROJECT_ROOT)
@@ -51,18 +52,18 @@ def local_dev():
     )
 
 
-def local_matchmaking():
+def local_matchmaking() -> None:
     """Run matchmaking locally with remote DB (tunnel) for fast debug loops."""
     script = PROJECT_ROOT / "scripts" / "local-matchmaking-dev.sh"
     os.execvp("bash", ["bash", str(script)] + sys.argv[1:])
 
 
-def _run_cmd(cmd: list[str] | str, **kwargs) -> subprocess.CompletedProcess:
+def _run_cmd(cmd: list[str] | str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
     """Run a command, printing it for visibility."""
     return subprocess.run(cmd, **kwargs)
 
 
-def _ssh_cmd(remote_host: str, command: str, **kwargs) -> subprocess.CompletedProcess:
+def _ssh_cmd(remote_host: str, command: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
     return _run_cmd(["ssh", remote_host, command], **kwargs)
 
 
@@ -106,7 +107,7 @@ def _drain_runs(remote_host: str | None, remote_dir: str) -> None:
         print("  Proceeding with deploy — run_monitoring will mark orphaned runs as failed.")
 
 
-def deploy():
+def deploy() -> None:
     """Deploy to remote server (git pull + docker compose) and copy .env.
 
     Gracefully drains in-progress runs before rebuilding to avoid orphaned runs.
@@ -191,14 +192,14 @@ def _run_with_db_env(port: str | int) -> None:
     os.execvp(args[0], args)
 
 
-def with_local_db():
+def with_local_db() -> None:
     """Run a command with local DB env (POSTGRES_HOST=localhost, POSTGRES_PORT=5432)."""
     load_dotenv(PROJECT_ROOT / ".env")
     port = os.environ.get("POSTGRES_PORT", "5432")
     _run_with_db_env(port)
 
 
-def with_remote_db():
+def with_remote_db() -> None:
     """Run a command with remote DB tunnel env (POSTGRES_HOST=localhost, POSTGRES_PORT=15432)."""
     load_dotenv(PROJECT_ROOT / ".env")
     port = os.environ.get("POSTGRES_REMOTE_TUNNEL_PORT", "15432")

@@ -10,6 +10,7 @@ This module is the entry point for Dagster. It wires together:
 """
 
 import os
+from typing import Any
 
 from dagster import (
     Definitions,
@@ -129,7 +130,7 @@ dev_resources = {
 }
 
 
-def get_resources():
+def get_resources() -> dict[str, Any]:
     """Get resources based on current environment."""
     env = get_environment()
 
@@ -146,7 +147,7 @@ def get_resources():
 
 
 # All jobs available in the dashboard
-all_jobs = [
+all_jobs: list[Any] = [
     # Asset jobs (partitioned) - use Backfill in UI to select partitions
     candidate_pipeline_job,
     candidate_vectors_job,
@@ -193,7 +194,7 @@ defs = Definitions(
 )
 
 
-def main():
+def main() -> None:
     """Entry point for CLI usage."""
     print("Talent Matching Dagster project loaded successfully!")
     print(f"Environment: {get_environment()}")

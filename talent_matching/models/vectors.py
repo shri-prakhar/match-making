@@ -1,11 +1,12 @@
 """Vector embedding models for semantic search."""
 
+import uuid
 from datetime import datetime
 from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from talent_matching.models.base import Base
@@ -23,11 +24,11 @@ class CandidateVector(Base):
 
     __tablename__ = "candidate_vectors"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # Foreign key to raw candidate
-    candidate_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    candidate_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("raw_candidates.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -56,11 +57,11 @@ class JobVector(Base):
 
     __tablename__ = "job_vectors"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
 
     # Foreign key to raw job
-    job_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
         ForeignKey("raw_jobs.id", ondelete="CASCADE"),
         nullable=False,
     )

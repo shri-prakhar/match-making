@@ -66,7 +66,7 @@ def _classify_failure(error_str: str) -> list[str]:
     ),
     default_status=dg.DefaultSensorStatus.RUNNING,
 )
-def run_failure_tagger(context: dg.RunFailureSensorContext):
+def run_failure_tagger(context: dg.RunFailureSensorContext) -> None:
     run_id = context.dagster_run.run_id
     job_name = context.dagster_run.job_name
 
