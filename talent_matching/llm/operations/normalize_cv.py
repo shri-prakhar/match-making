@@ -8,6 +8,7 @@ Bump PROMPT_VERSION when changing the prompt to trigger asset staleness.
 import json
 from typing import TYPE_CHECKING, Any
 
+from talent_matching.llm.job_category_prompts_loader import get_cv_extraction_prompt
 from talent_matching.models.enums import proficiency_scale_for_prompt
 
 if TYPE_CHECKING:
@@ -18,9 +19,7 @@ if TYPE_CHECKING:
 # - MAJOR: Breaking changes to output schema
 # - MINOR: New fields or significant prompt improvements
 # - PATCH: Minor wording tweaks or bug fixes
-PROMPT_VERSION = (
-    "5.2.0"  # v5.2.0: When country is present, always set region (infer from country if not stated)
-)
+PROMPT_VERSION = "5.3.0"  # v5.3.0: Category-aware CV extraction — concatenate per-category prompts for desired_job_categories
 
 # Default model for CV normalization (cost-effective for extraction)
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -226,6 +225,33 @@ SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace(
 )
 
 
+def _build_system_prompt(
+    base_prompt: str,
+    desired_job_categories: list[str] | None,
+) -> str:
+    """Build system prompt: base + optional concatenated category prompts.
+
+    When desired_job_categories is non-empty, appends a section listing
+    important skills/evidence to consider for each category (from DB or default).
+    """
+    if not desired_job_categories:
+        return base_prompt
+    parts = [
+        "For this candidate we match to the following role categories. For each category, consider these important skills and evidence:",
+        "",
+    ]
+    for cat in desired_job_categories:
+        if not (cat and str(cat).strip()):
+            continue
+        prompt_text = get_cv_extraction_prompt(str(cat).strip())
+        parts.append(f"**{cat.strip()}:**")
+        parts.append(prompt_text)
+        parts.append("")
+    if len(parts) <= 2:
+        return base_prompt
+    return base_prompt + "\n\n" + "\n".join(parts)
+
+
 class NormalizeCVResult:
     """Result of CV normalization with usage stats for Dagster metadata."""
 
@@ -298,6 +324,7 @@ async def normalize_cv(
     openrouter: "OpenRouterResource",
     raw_cv_text: str | None = None,
     cv_text_pdf: str | None = None,
+    desired_job_categories: list[str] | None = None,
 ) -> NormalizeCVResult:
     """Normalize a CV into structured format using LLM.
 
@@ -305,22 +332,28 @@ async def normalize_cv(
     PDF-extracted text are available. The LLM merges both sources
     to create a comprehensive profile.
 
+    When desired_job_categories is provided, the system prompt includes
+    concatenated category-specific extraction guidance (from DB or default)
+    so the single extraction run captures evidence relevant to all target roles.
+
     Args:
         openrouter: OpenRouterResource instance for API calls
         raw_cv_text: Raw text from Airtable (original cv_text field)
         cv_text_pdf: Text extracted from PDF attachment
+        desired_job_categories: Optional list of job categories; when set, appends
+            per-category prompt fragments to the base prompt (DB or in-code default).
 
     Returns:
         NormalizeCVResult with data and usage stats for metadata
     """
     model = DEFAULT_MODEL
 
-    # Build content from available sources
+    system_prompt = _build_system_prompt(SYSTEM_PROMPT, desired_job_categories)
     user_content = _build_cv_content(raw_cv_text, cv_text_pdf)
 
     response = await openrouter.complete(
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
         model=model,
