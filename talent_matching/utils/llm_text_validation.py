@@ -3,6 +3,15 @@
 from typing import Any
 
 
+class InsufficientNarrativeDataError(ValueError):
+    """Raised when required narrative fields (experience, domain, personality, impact, technical) are empty.
+
+    Used by candidate_vectors to fail fast without retries: empty narratives indicate
+    missing or unusable CV data (e.g. no CV text, or LLM returned empty). Tag runs with
+    error_type=insufficient_narrative_data for filtering.
+    """
+
+
 def require_meaningful_text(
     value: Any,
     *,

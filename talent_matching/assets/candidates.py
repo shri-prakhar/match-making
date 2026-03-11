@@ -22,6 +22,7 @@ from dagster import (
     DataVersion,
     DynamicPartitionsDefinition,
     Output,
+    RetryPolicy,
     asset,
 )
 
@@ -39,7 +40,10 @@ from talent_matching.utils.airtable_mapper import (
     parse_comma_separated,
 )
 from talent_matching.utils.dagster_async import run_with_interrupt_check
-from talent_matching.utils.llm_text_validation import require_meaningful_text_fields
+from talent_matching.utils.llm_text_validation import (
+    InsufficientNarrativeDataError,
+    require_meaningful_text_fields,
+)
 
 # Dynamic partition definition for candidates
 # Each candidate record gets its own partition key (Airtable record ID)
@@ -236,6 +240,10 @@ def raw_candidates(
     return raw_data
 
 
+# No retries for normalized_candidates: empty-narrative validation fails here (not at candidate_vectors).
+_NORMALIZED_CANDIDATES_RETRY_POLICY = RetryPolicy(max_retries=0)
+
+
 @asset(
     partitions_def=candidate_partitions,
     ins={"raw_candidates": AssetIn()},
@@ -243,7 +251,8 @@ def raw_candidates(
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="postgres_io",
-    code_version="2.2.0",  # v2.2.0: category-aware CV — one run with desired_job_categories concatenated
+    code_version="2.3.0",  # v2.3.0: fail at normalization when narratives empty (InsufficientNarrativeDataError)
+    retry_policy=_NORMALIZED_CANDIDATES_RETRY_POLICY,
     op_tags={
         "dagster/concurrency_key": "openrouter_api",
     },
@@ -376,6 +385,22 @@ def normalized_candidates(
         )
     )
 
+    # Fail at normalization when LLM returns empty narratives (required for candidate_vectors).
+    narratives = (result.data or {}).get("narratives", {})
+    try:
+        require_meaningful_text_fields(
+            {
+                "experience": narratives.get("experience"),
+                "domain": narratives.get("domain"),
+                "personality": narratives.get("personality"),
+                "impact": narratives.get("impact"),
+                "technical": narratives.get("technical"),
+            },
+            context=f"normalized_candidates record_id={record_id}",
+        )
+    except ValueError as e:
+        raise InsufficientNarrativeDataError(str(e)) from e
+
     # Add LLM cost metadata to the materialization (visible in Dagster UI)
     context.add_output_metadata(
         {
@@ -407,6 +432,11 @@ def _get_proficiency_label(score: int) -> str:
     return PROFICIENCY_LEVELS.get(score, "Unknown")
 
 
+# No retries for candidate_vectors: empty-narrative failures are data validation (no CV / empty LLM output),
+# not transient; retrying wastes time. Rate-limit retries could be added later via conditional RetryRequested.
+_CANDIDATE_VECTORS_RETRY_POLICY = RetryPolicy(max_retries=0)
+
+
 @asset(
     partitions_def=candidate_partitions,
     ins={"normalized_candidates": AssetIn()},
@@ -414,7 +444,8 @@ def _get_proficiency_label(score: int) -> str:
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="pgvector_io",
-    code_version="4.4.0",  # v4.4.0: skip embeddings when candidate excluded from matchmaking (no CV)
+    code_version="4.5.0",  # v4.5.0: InsufficientNarrativeDataError, no retries, error tag
+    retry_policy=_CANDIDATE_VECTORS_RETRY_POLICY,
     op_tags={
         # Limit concurrent OpenRouter API calls to avoid rate limits
         # Shares concurrency pool with normalized_candidates
@@ -500,16 +531,20 @@ def candidate_vectors(
     # ═══════════════════════════════════════════════════════════════════
     # NARRATIVE VECTORS (pure prose)
     # ═══════════════════════════════════════════════════════════════════
-    texts_to_embed = require_meaningful_text_fields(
-        {
-            "experience": narratives.get("experience"),
-            "domain": narratives.get("domain"),
-            "personality": narratives.get("personality"),
-            "impact": narratives.get("impact"),
-            "technical": narratives.get("technical"),
-        },
-        context=f"candidate_vectors record_id={record_id}",
-    )
+    try:
+        texts_to_embed = require_meaningful_text_fields(
+            {
+                "experience": narratives.get("experience"),
+                "domain": narratives.get("domain"),
+                "personality": narratives.get("personality"),
+                "impact": narratives.get("impact"),
+                "technical": narratives.get("technical"),
+            },
+            context=f"candidate_vectors record_id={record_id}",
+        )
+    except ValueError as e:
+        # Data validation failure (no CV / empty LLM narratives). Do not retry; tag run for filtering.
+        raise InsufficientNarrativeDataError(str(e)) from e
 
     # ═══════════════════════════════════════════════════════════════════
     # SKILL VECTORS (structured: "Skill: Level - Evidence")

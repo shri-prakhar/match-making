@@ -45,6 +45,10 @@ KNOWN_FAILURES: list[tuple[str, list[str]]] = [
         "CONCURRENCY_SLOTS_ERROR",
         ["concurrency_limits", "concurrency_slots", "NotNullViolation"],
     ),
+    (
+        "INSUFFICIENT_NARRATIVE_DATA",
+        ["InsufficientNarrativeDataError", "experience is empty.; domain is empty"],
+    ),
 ]
 
 
