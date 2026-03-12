@@ -10,6 +10,7 @@ This script deletes:
 Usage:
     poetry run with-local-db python scripts/clear_no_cv_candidates.py [--dry-run]
     poetry run with-remote-db python scripts/clear_no_cv_candidates.py [--dry-run]
+    On server: poetry run python scripts/clear_no_cv_candidates.py --local [--dry-run]
 
 Use --dry-run to only print what would be deleted.
 """
@@ -19,11 +20,18 @@ import sys
 
 sys.path.insert(0, __import__("pathlib").Path(__file__).resolve().parents[1])
 
+from talent_matching.script_env import apply_local_db
 from scripts.inspect_utils import get_connection
 
 
 def main() -> int:
+    apply_local_db()
     parser = argparse.ArgumentParser(description="Clear DB of candidates with no CV/summary")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local Postgres (when running on the server).",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",

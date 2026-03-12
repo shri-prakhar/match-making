@@ -8,6 +8,7 @@ matchmaking scores and rankings for the same job.
 Usage:
     poetry run with-remote-db python scripts/analyze_human_vs_system.py <ats_record_id>
     poetry run with-local-db python scripts/analyze_human_vs_system.py <ats_record_id>
+    On server: poetry run python scripts/analyze_human_vs_system.py --local <ats_record_id>
 
 Requires:
     - AIRTABLE_ATS_TABLE_ID, AIRTABLE_API_KEY in .env
@@ -27,7 +28,7 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.config.scoring import CULTURE_WEIGHT, DOMAIN_WEIGHT, ROLE_WEIGHT  # noqa: E402
+from talent_matching.config.scoring import get_weights_for_job_category  # noqa: E402
 
 HUMAN_SELECTION_COLUMNS = [
     "CLIENT INTRODUCTION",
@@ -129,7 +130,8 @@ def analyze_one(partition_id: str, verbose: bool = True) -> dict | None:
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute(
-        "SELECT id, job_title, company_name FROM normalized_jobs WHERE airtable_record_id = %s",
+        """SELECT id, job_title, company_name, job_category
+           FROM normalized_jobs WHERE airtable_record_id = %s""",
         (partition_id,),
     )
     job = cur.fetchone()
@@ -141,6 +143,7 @@ def analyze_one(partition_id: str, verbose: bool = True) -> dict | None:
         conn.close()
         return None
     job_id = job["id"]
+    weights = get_weights_for_job_category(job.get("job_category"))
 
     # 4. Load all matches for this job
     cur.execute(
@@ -226,7 +229,11 @@ def analyze_one(partition_id: str, verbose: bool = True) -> dict | None:
                 ds = match_info["domain_similarity_score"]
                 cs = match_info["culture_similarity_score"]
                 if rs is not None and ds is not None and cs is not None:
-                    vec_weighted = ROLE_WEIGHT * rs + DOMAIN_WEIGHT * ds + CULTURE_WEIGHT * cs
+                    vec_weighted = (
+                        weights.role_weight * rs
+                        + weights.domain_weight * ds
+                        + weights.culture_weight * cs
+                    )
                     vec_str = f"{vec_weighted * 100:.2f}"
                 else:
                     vec_str = "--"
@@ -383,6 +390,8 @@ def analyze_one(partition_id: str, verbose: bool = True) -> dict | None:
 
 
 def main():
+    from talent_matching.script_env import apply_local_db
+    apply_local_db()
     if len(sys.argv) < 2:
         print("Usage: python scripts/analyze_human_vs_system.py <ats_record_id>")
         print(

@@ -13,6 +13,7 @@ Usage:
 
 Output: printed to stdout. Redirect to a file to save:
     poetry run with-remote-db python scripts/matchmaking_report.py recIqBsuF33YrIrMX > report.md
+    On server: poetry run python scripts/matchmaking_report.py --local <partition_id>
 
 For remote: poetry run remote-ui or poetry run local-matchmaking must be running.
 """
@@ -27,7 +28,8 @@ from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
-from talent_matching.config.scoring import CULTURE_WEIGHT, DOMAIN_WEIGHT, ROLE_WEIGHT  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
+from talent_matching.config.scoring import get_weights_for_job_category  # noqa: E402
 
 # Max characters of CV to show per candidate (avoid huge output)
 CV_EXCERPT_CHARS = 4000
@@ -49,10 +51,10 @@ def _fmt_score(v):
     return f"{float(v):.2f}"
 
 
-def _vector_display(rs, ds, cs):
+def _vector_display(rs, ds, cs, weights):
     if rs is None or ds is None or cs is None:
         return "—"
-    w = ROLE_WEIGHT * rs + DOMAIN_WEIGHT * ds + CULTURE_WEIGHT * cs
+    w = weights.role_weight * rs + weights.domain_weight * ds + weights.culture_weight * cs
     return (
         f"{w * 100:.1f}% (role {_fmt_score(rs)}, domain {_fmt_score(ds)}, culture {_fmt_score(cs)})"
     )
@@ -79,7 +81,7 @@ def run_report(partition_id: str) -> None:
     # ─── Job ─────────────────────────────────────────────────────
     cur.execute(
         """SELECT id, raw_job_id, job_title, company_name, airtable_record_id,
-                  role_summary, job_description, seniority_level, min_years_experience
+                  role_summary, job_description, seniority_level, min_years_experience, job_category
            FROM normalized_jobs WHERE airtable_record_id = %s""",
         (partition_id,),
     )
@@ -91,6 +93,7 @@ def run_report(partition_id: str) -> None:
         sys.exit(1)
 
     job_id = job["id"]
+    weights = get_weights_for_job_category(job.get("job_category"))
     cur.execute(
         """SELECT jrs.requirement_type, jrs.min_years, s.name AS skill_name
            FROM job_required_skills jrs
@@ -172,6 +175,7 @@ def run_report(partition_id: str) -> None:
             m["role_similarity_score"],
             m["domain_similarity_score"],
             m["culture_similarity_score"],
+            weights,
         )
         raw = raw_by_partition.get(cid) or {}
         cv_full = _cv_text(raw)
@@ -235,6 +239,7 @@ def run_report(partition_id: str) -> None:
 
 
 def main():
+    apply_local_db()
     if len(sys.argv) < 2:
         print(
             "Usage: poetry run with-remote-db python scripts/matchmaking_report.py <partition_id>",

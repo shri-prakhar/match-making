@@ -3,6 +3,7 @@
 
 Usage:
     poetry run python scripts/run_ats_matchmaking.py recfZWUHZX43pVhTX
+    On server: poetry run python scripts/run_ats_matchmaking.py --local recfZWUHZX43pVhTX
 
 Steps:
     1. Fetch the ATS record from Airtable
@@ -23,6 +24,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
+from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.db import get_session  # noqa: E402
 from talent_matching.llm.operations.embed_text import embed_text  # noqa: E402
 from talent_matching.llm.operations.normalize_job import (  # noqa: E402
@@ -301,9 +303,9 @@ def run_scoring_for_job(record_id: str):
         print("\n  No matches produced.")
         return
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"  TOP {min(15, len(matches))} MATCHES")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
     for m in matches[:15]:
         print(
             f"  #{m['rank']:2d}  {m['candidate_name']:<35s}  "
@@ -319,14 +321,15 @@ def run_scoring_for_job(record_id: str):
 
 
 def main():
+    apply_local_db()
     if len(sys.argv) < 2:
         print("Usage: poetry run python scripts/run_ats_matchmaking.py <ats_record_id>")
         sys.exit(1)
 
     record_id = sys.argv[1]
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"  ATS MATCHMAKING PIPELINE: {record_id}")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
     # Step 1: Fetch ATS record (returns raw Airtable JSON with "id" and "fields")
     print("\n[1/5] Fetching ATS record from Airtable...")
@@ -386,9 +389,9 @@ def main():
     print("\n[5/5] Scoring matches...")
     run_scoring_for_job(record_id)
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("  DONE")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
 
 if __name__ == "__main__":

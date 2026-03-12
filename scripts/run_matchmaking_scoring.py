@@ -7,6 +7,7 @@ compensation, location; top 20 per job. Prints full breakdown once per candidate
 
 Usage:
     poetry run python scripts/run_matchmaking_scoring.py
+    On server: poetry run python scripts/run_matchmaking_scoring.py --local
 
 Requires:
     - Normalized jobs and candidates in PostgreSQL
@@ -26,25 +27,21 @@ from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
-from talent_matching.config.scoring import (  # noqa: E402
-    COMPENSATION_WEIGHT,
-    CULTURE_WEIGHT,
-    DOMAIN_WEIGHT,
-    LOCATION_WEIGHT,
-    ROLE_WEIGHT,
-    SKILL_FIT_WEIGHT,
-    SKILL_RATING_WEIGHT,
-    SKILL_SEMANTIC_WEIGHT,
-    VECTOR_WEIGHT,
-)
+from talent_matching.script_env import apply_local_db  # noqa: E402
+from talent_matching.config.scoring import get_weights_for_job_category  # noqa: E402
 from talent_matching.matchmaking.scoring import (  # noqa: E402
-    SENIORITY_MAX_DEDUCTION,
+    candidate_seniority_scale,
     compensation_fit,
     cosine_similarity,
+    job_is_high_stakes,
+    job_required_seniority_scale,
     location_score,
+    seniority_level_penalty,
     seniority_penalty_and_experience_score,
+    seniority_scale_fit,
     skill_coverage_score,
     skill_semantic_score,
+    tenure_instability_penalty,
 )
 from talent_matching.resources.matchmaking import MatchmakingResource  # noqa: E402
 
@@ -66,7 +63,7 @@ def load_normalized_jobs(conn) -> list[dict[str, Any]]:
     cur.execute(
         """SELECT id, raw_job_id, job_title, job_category, company_name,
            salary_min, salary_max, min_years_experience, max_years_experience,
-           location_type, timezone_requirements
+           location_type, timezone_requirements, seniority_level
            FROM normalized_jobs ORDER BY id LIMIT 50"""
     )
     rows = cur.fetchall()
@@ -80,7 +77,9 @@ def load_normalized_candidates(conn) -> list[dict[str, Any]]:
     cur.execute(
         """SELECT id, raw_candidate_id, airtable_record_id, full_name, skills_summary,
            years_of_experience, compensation_min, compensation_max, timezone,
-           desired_job_categories, job_status
+           desired_job_categories, job_status,
+           seniority_level, average_tenure_months, job_count,
+           normalized_json, leadership_score, technical_depth_score
            FROM normalized_candidates
            WHERE job_status IS NULL OR job_status != 'Fraud'
            ORDER BY id"""
@@ -177,6 +176,8 @@ def run_scoring(
         job_role_vec = jvecs.get("role_description")
         job_domain_vec = jvecs.get("domain")
         job_personality_vec = jvecs.get("personality")
+        job_impact_vec = jvecs.get("impact")
+        job_technical_vec = jvecs.get("technical")
         req_skills = job_required_skills.get(str(job_id_norm), [])
         must_have = [
             s["skill_name"] for s in req_skills if s.get("requirement_type") == "must_have"
@@ -198,6 +199,9 @@ def run_scoring(
         job_location_type = job.get("location_type")
         job_timezone = job.get("timezone_requirements")
         job_category = (job.get("job_category") or "").strip()
+        weights = get_weights_for_job_category(job.get("job_category"))
+        job_req_scale = job_required_seniority_scale(job)
+        high_stakes = job_is_high_stakes(job)
 
         rows: list[tuple] = []
         for candidate in normalized_candidates:
@@ -232,8 +236,35 @@ def run_scoring(
                 if job_personality_vec and cvecs.get("personality")
                 else 0.0
             )
+            impact_sim = (
+                cosine_similarity(job_impact_vec, cvecs["impact"])
+                if job_impact_vec and cvecs.get("impact")
+                else 0.0
+            )
+            technical_sim = (
+                cosine_similarity(job_technical_vec, cvecs["technical"])
+                if job_technical_vec and cvecs.get("technical")
+                else 0.0
+            )
             vector_score = (
-                ROLE_WEIGHT * role_sim + DOMAIN_WEIGHT * domain_sim + CULTURE_WEIGHT * culture_sim
+                weights.role_weight * role_sim
+                + weights.domain_weight * domain_sim
+                + weights.culture_weight * culture_sim
+                + weights.impact_weight * impact_sim
+                + weights.technical_weight * technical_sim
+            )
+
+            cand_scale = candidate_seniority_scale(candidate)
+            scale_fit = seniority_scale_fit(cand_scale, job_req_scale)
+            level_deduction = seniority_level_penalty(
+                job.get("seniority_level"),
+                candidate.get("seniority_level"),
+                weights.seniority_level_max_deduction,
+            )
+            tenure_deduction_raw = tenure_instability_penalty(candidate, high_stakes)
+            tenure_deduction = min(
+                weights.tenure_instability_max_deduction,
+                tenure_deduction_raw,
             )
 
             cand_skills_list = candidate_skills_map.get(str(cand_id_norm), [])
@@ -259,7 +290,8 @@ def run_scoring(
             )
             if matching:
                 skill_fit_score = (
-                    SKILL_RATING_WEIGHT * skill_coverage + SKILL_SEMANTIC_WEIGHT * skill_semantic
+                    weights.skill_rating_weight * skill_coverage
+                    + weights.skill_semantic_weight * skill_semantic
                 )
             else:
                 skill_fit_score = skill_coverage
@@ -296,6 +328,9 @@ def run_scoring(
                     compensation_match_score,
                     experience_match_score,
                     location_match_score,
+                    scale_fit,
+                    level_deduction,
+                    tenure_deduction,
                     matching,
                     missing_must + missing_nice,
                     str(cand_id_norm),
@@ -316,6 +351,9 @@ def run_scoring(
                 comp_score,
                 exp_score,
                 loc_score,
+                scale_fit,
+                level_ded,
+                tenure_ded,
                 matching,
                 missing,
                 cid,
@@ -324,12 +362,14 @@ def run_scoring(
             ) = r
             # Use raw vector score (no per-job min-max rescaling)
             base = (
-                VECTOR_WEIGHT * v_raw
-                + SKILL_FIT_WEIGHT * skill_fit
-                + COMPENSATION_WEIGHT * comp_score
-                + LOCATION_WEIGHT * loc_score
+                weights.vector_weight * v_raw
+                + weights.skill_fit_weight * skill_fit
+                + weights.compensation_weight * comp_score
+                + weights.location_weight * loc_score
+                + weights.seniority_scale_weight * scale_fit
             )
-            seniority_deduction = min(SENIORITY_MAX_DEDUCTION, sen_pen / 100.0)
+            years_deduction = min(weights.seniority_max_deduction, sen_pen / 100.0)
+            seniority_deduction = years_deduction + level_ded + tenure_ded
             combined_01 = max(0.0, min(1.0, base - seniority_deduction))
             scored.append(
                 (
@@ -400,6 +440,7 @@ def run_scoring(
 
 
 def main():
+    apply_local_db()
     print("\n" + "=" * 80)
     print("  MATCHMAKING SCORING TEST (existing normalized jobs & candidates)")
     print("=" * 80)
@@ -457,7 +498,7 @@ def main():
     print("  SCORING RESULTS (top 20 per job)")
     print("-" * 80)
     print(
-        "  Formula: 40% vector (raw) + 40% skill fit + 10% compensation + 10% location − seniority deduction (cap 20%)"
+        "  Formula: vector (role+domain+culture+impact+technical) + skill_fit + comp + location + seniority_scale_fit − (years + level + tenure) deductions"
     )
     print(
         "  Skill fit: 80% rating-based coverage, 20% semantic (only when at least one skill matches)."

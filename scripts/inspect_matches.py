@@ -12,6 +12,7 @@ Usage:
     poetry run with-local-db python scripts/inspect_matches.py <partition_id>
     poetry run with-remote-db python scripts/inspect_matches.py <partition_id>
     poetry run with-remote-db python scripts/inspect_matches.py recXXXXXXXXXXXXXX --verify-location
+    On server: poetry run python scripts/inspect_matches.py --local <partition_id>
 
 Requires:
     - Matches already computed and stored (run matches asset for the job partition).
@@ -30,7 +31,11 @@ load_dotenv()
 # Add project root for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.config.scoring import CULTURE_WEIGHT, DOMAIN_WEIGHT, ROLE_WEIGHT  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
+from talent_matching.config.scoring import (  # noqa: E402
+    ScoringWeights,
+    get_weights_for_job_category,
+)
 
 
 def get_connection():
@@ -45,6 +50,48 @@ def get_connection():
     )
 
 
+def load_weights_for_job_category(conn, job_category: str | None) -> tuple[ScoringWeights, str]:
+    """Load scoring weights from DB for job_category; fall back to config defaults.
+    Returns (weights, source) where source is 'DB' or 'defaults'.
+    """
+    key = (job_category or "").strip()
+    if not key:
+        return get_weights_for_job_category(None), "defaults"
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """SELECT role_weight, domain_weight, culture_weight, impact_weight, technical_weight,
+                  vector_weight, skill_fit_weight, compensation_weight, location_weight, seniority_scale_weight,
+                  skill_rating_weight, skill_semantic_weight, seniority_max_deduction,
+                  seniority_level_max_deduction, tenure_instability_max_deduction
+           FROM scoring_weights WHERE job_category = %s""",
+        (key,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    if row:
+        return (
+            ScoringWeights(
+                role_weight=float(row["role_weight"]),
+                domain_weight=float(row["domain_weight"]),
+                culture_weight=float(row["culture_weight"]),
+                impact_weight=float(row["impact_weight"]),
+                technical_weight=float(row["technical_weight"]),
+                vector_weight=float(row["vector_weight"]),
+                skill_fit_weight=float(row["skill_fit_weight"]),
+                compensation_weight=float(row["compensation_weight"]),
+                location_weight=float(row["location_weight"]),
+                seniority_scale_weight=float(row["seniority_scale_weight"]),
+                skill_rating_weight=float(row["skill_rating_weight"]),
+                skill_semantic_weight=float(row["skill_semantic_weight"]),
+                seniority_max_deduction=float(row["seniority_max_deduction"]),
+                seniority_level_max_deduction=float(row["seniority_level_max_deduction"]),
+                tenure_instability_max_deduction=float(row["tenure_instability_max_deduction"]),
+            ),
+            "DB",
+        )
+    return get_weights_for_job_category(key), "defaults"
+
+
 def inspect_matches(partition_id: str, verify_location: bool = False) -> None:
     host = os.environ.get("POSTGRES_HOST", "localhost")
     port = int(os.environ.get("POSTGRES_PORT", 5432))
@@ -54,7 +101,7 @@ def inspect_matches(partition_id: str, verify_location: bool = False) -> None:
 
     # Resolve job by partition_id (airtable_record_id)
     cur.execute(
-        """SELECT id, raw_job_id, job_title, company_name, airtable_record_id
+        """SELECT id, raw_job_id, job_title, company_name, airtable_record_id, job_category
            FROM normalized_jobs WHERE airtable_record_id = %s""",
         (partition_id,),
     )
@@ -69,6 +116,8 @@ def inspect_matches(partition_id: str, verify_location: bool = False) -> None:
     job_id = job["id"]
     job_title = (job.get("job_title") or "—")[:35]
     company = (job.get("company_name") or "—")[:25]
+    job_category = job.get("job_category")
+    weights, weights_source = load_weights_for_job_category(conn, job_category)
 
     # Load job's location_raw for verification
     cur.execute(
@@ -112,8 +161,11 @@ def inspect_matches(partition_id: str, verify_location: bool = False) -> None:
 
     print("\n" + "-" * 80)
     print("  SCORING BREAKDOWN (stored matches)")
+    print(f"  Weights: from {weights_source}" + (f" (job_category={job_category})" if job_category else ""))
     print(
-        "  Formula: 40% vector (raw) + 40% skill fit + 10% compensation + 10% location − seniority deduction (cap 20%)"
+        f"  Formula: vector={weights.vector_weight:.2f} (role/domain/culture/impact/tech) + skill_fit={weights.skill_fit_weight:.2f} "
+        f"+ comp={weights.compensation_weight:.2f} + location={weights.location_weight:.2f} + seniority_scale={weights.seniority_scale_weight:.2f} "
+        f"− deductions (seniority max {weights.seniority_max_deduction:.2f}, level {weights.seniority_level_max_deduction:.2f}, tenure {weights.tenure_instability_max_deduction:.2f})"
     )
     print("  Inspect a candidate: python scripts/inspect_candidate.py <partition_id>")
     print("-" * 80)
@@ -126,7 +178,9 @@ def inspect_matches(partition_id: str, verify_location: bool = False) -> None:
         ds = r["domain_similarity_score"]
         cs = r["culture_similarity_score"]
         if rs is not None and ds is not None and cs is not None:
-            vector_weighted = ROLE_WEIGHT * rs + DOMAIN_WEIGHT * ds + CULTURE_WEIGHT * cs
+            vector_weighted = (
+                weights.role_weight * rs + weights.domain_weight * ds + weights.culture_weight * cs
+            )
             vec_rescaled_100 = round(vector_weighted * 100.0, 2)
         else:
             vec_rescaled_100 = "—"
@@ -225,6 +279,7 @@ def inspect_matches(partition_id: str, verify_location: bool = False) -> None:
 
 
 def main():
+    apply_local_db()
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = [a for a in sys.argv[1:] if a.startswith("--")]
     verify_location = "--verify-location" in flags

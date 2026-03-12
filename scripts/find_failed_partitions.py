@@ -6,10 +6,15 @@ airtable_candidates and normalized_candidates steps.
 Usage:
     poetry run with-remote-db python scripts/find_failed_partitions.py
     poetry run with-local-db python scripts/find_failed_partitions.py
+    On server: poetry run python scripts/find_failed_partitions.py --local
 """
 
 import json
 import sys
+
+from talent_matching.script_env import apply_local_db
+
+apply_local_db()
 
 from sqlalchemy import text
 

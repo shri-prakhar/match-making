@@ -8,9 +8,12 @@ Prerequisites:
 
 Usage:
   poetry run with-remote-db python scripts/rerun_matchmaking_done_jobs.py
+  On server: poetry run python scripts/rerun_matchmaking_done_jobs.py --local
 """
 
 import os
+
+from talent_matching.script_env import apply_local_db
 import subprocess
 import sys
 
@@ -65,6 +68,7 @@ def launch_run(partition_id: str) -> bool:
 
 
 def main() -> int:
+    apply_local_db()
     print("Fetching ATS jobs with Job Status = 'Matchmaking Done'...")
     records = fetch_matchmaking_done_records()
     if not records:

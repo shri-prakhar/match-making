@@ -4,6 +4,7 @@
 Usage:
     poetry run with-local-db python scripts/inspect_job.py <partition_id>
     poetry run with-remote-db python scripts/inspect_job.py recXXXXXXXXXXXXXX
+    On server: poetry run python scripts/inspect_job.py --local <partition_id>
 
 This script displays all normalized information about a job including:
 - Raw job data
@@ -31,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 
+from talent_matching.script_env import apply_local_db
 from scripts.inspect_utils import format_value, get_connection, print_field, print_section
 
 load_dotenv()
@@ -200,22 +202,76 @@ def inspect_job(partition_id: str):
                 print(f"  • {rs['skill_name'] or 'Unknown'} ({rs['requirement_type']}{years})")
 
         # ─────────────────────────────────────────────────────────
+        # SCORING WEIGHTS (per job category; used by matches asset)
+        # ─────────────────────────────────────────────────────────
+        print_section("SCORING WEIGHTS (for this job category)")
+        job_category = (normalized.get("job_category") or raw.get("job_category_raw") or "").strip()
+        if job_category:
+            cur.execute(
+                """SELECT job_category, role_weight, domain_weight, culture_weight, impact_weight, technical_weight,
+                          vector_weight, skill_fit_weight, compensation_weight, location_weight, seniority_scale_weight,
+                          skill_rating_weight, skill_semantic_weight, seniority_max_deduction, seniority_level_max_deduction,
+                          tenure_instability_max_deduction, updated_at
+                   FROM scoring_weights WHERE job_category = %s""",
+                (job_category,),
+            )
+            weights_row = cur.fetchone()
+            if weights_row:
+                print(f"  Category: {weights_row['job_category']}  (from DB, updated {format_value(weights_row['updated_at'])})")
+                print("  Vector sub-weights (role/domain/culture/impact/technical):")
+                print_field("    role", round(weights_row["role_weight"], 4), 0)
+                print_field("    domain", round(weights_row["domain_weight"], 4), 0)
+                print_field("    culture", round(weights_row["culture_weight"], 4), 0)
+                print_field("    impact", round(weights_row["impact_weight"], 4), 0)
+                print_field("    technical", round(weights_row["technical_weight"], 4), 0)
+                print("  Top-level blend:")
+                print_field("    vector_weight", round(weights_row["vector_weight"], 4), 0)
+                print_field("    skill_fit_weight", round(weights_row["skill_fit_weight"], 4), 0)
+                print_field("    compensation_weight", round(weights_row["compensation_weight"], 4), 0)
+                print_field("    location_weight", round(weights_row["location_weight"], 4), 0)
+                print_field("    seniority_scale_weight", round(weights_row["seniority_scale_weight"], 4), 0)
+                print("  Skill fit sub-weights:")
+                print_field("    skill_rating_weight", round(weights_row["skill_rating_weight"], 4), 0)
+                print_field("    skill_semantic_weight", round(weights_row["skill_semantic_weight"], 4), 0)
+                print("  Max deductions:")
+                print_field("    seniority_max_deduction", round(weights_row["seniority_max_deduction"], 4), 0)
+                print_field("    seniority_level_max_deduction", round(weights_row["seniority_level_max_deduction"], 4), 0)
+                print_field("    tenure_instability_max_deduction", round(weights_row["tenure_instability_max_deduction"], 4), 0)
+            else:
+                print(f"  Category: {job_category}")
+                print("  (No row in scoring_weights; matchmaking uses config defaults.)")
+        else:
+            print("  (No job_category; matchmaking uses config defaults.)")
+
+        # ─────────────────────────────────────────────────────────
         # NARRATIVES (Pure Prose for Vectorization)
         # ─────────────────────────────────────────────────────────
         print_section("NARRATIVES (Pure Prose for Vectorization)")
 
-        narrative_keys = [
-            "narrative_experience",
-            "narrative_domain",
-            "narrative_personality",
-            "narrative_impact",
-            "narrative_technical",
-            "narrative_role",
+        # Prefer normalized_json.narratives (experience, domain, personality, impact, technical, role_description)
+        normalized_json = normalized.get("normalized_json")
+        if normalized_json and isinstance(normalized_json, str):
+            normalized_json = json.loads(normalized_json)
+        narratives = (normalized_json or {}).get("narratives", {}) if normalized_json else {}
+        display_order = [
+            ("experience", "EXPERIENCE"),
+            ("domain", "DOMAIN"),
+            ("personality", "PERSONALITY"),
+            ("impact", "IMPACT"),
+            ("technical", "TECHNICAL"),
+            ("role_description", "ROLE"),
+            ("role", "ROLE"),
         ]
+        seen_role = False
         has_any = False
-        for key in narrative_keys:
-            text = normalized.get(key)
-            label = key.replace("narrative_", "").upper()
+        for key, label in display_order:
+            if key == "role" and seen_role:
+                continue
+            text = narratives.get(key) or (
+                normalized.get("narrative_role") if key in ("role_description", "role") else normalized.get(f"narrative_{key}")
+            )
+            if key in ("role_description", "role"):
+                seen_role = True
             if text:
                 has_any = True
                 print(f"\n  📖 {label}")
@@ -224,21 +280,7 @@ def inspect_job(partition_id: str):
                 print(f"\n  ❌ {label}: (missing)")
 
         if not has_any:
-            normalized_json = normalized.get("normalized_json")
-            if normalized_json:
-                if isinstance(normalized_json, str):
-                    normalized_json = json.loads(normalized_json)
-                narratives = normalized_json.get("narratives", {})
-                if narratives:
-                    print("  (Fallback: narratives in normalized_json)")
-                    for k, v in narratives.items():
-                        if v:
-                            print(f"\n  📖 {k.upper()}")
-                            print(f"     {format_value(v, max_length=500)}")
-                else:
-                    print("  ❌ No narratives in normalized_json either")
-            else:
-                print("  ❌ No narrative columns or normalized_json")
+            print("  ❌ No narratives in normalized_json or narrative_* columns")
 
     # ─────────────────────────────────────────────────────────────
     # JOB VECTORS (stored by raw_jobs.id; same key used by job_vectors asset)
@@ -305,6 +347,7 @@ def inspect_job(partition_id: str):
 
 
 def main():
+    apply_local_db()
     if len(sys.argv) < 2:
         print("Usage: python scripts/inspect_job.py <partition_id>")
         print("Example: python scripts/inspect_job.py recXXXXXXXXXXXXXX")

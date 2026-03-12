@@ -8,6 +8,7 @@ Usage:
     poetry run with-local-db python scripts/check_matchmaking_data.py
     poetry run with-remote-db python scripts/check_matchmaking_data.py
     poetry run with-remote-db python scripts/check_matchmaking_data.py --gaps [--limit N]
+    On server: poetry run python scripts/check_matchmaking_data.py --local [--gaps] [--limit N]
 """
 
 import argparse
@@ -19,6 +20,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from talent_matching.script_env import apply_local_db  # noqa: E402
 import psycopg2  # noqa: E402
 from psycopg2.extras import RealDictCursor  # noqa: E402
 
@@ -133,7 +135,13 @@ def check_gaps(conn, limit: int | None) -> None:
 
 
 def main():
+    apply_local_db()
     parser = argparse.ArgumentParser(description="Check matchmaking data and identify info gaps")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local Postgres (when running on the server).",
+    )
     parser.add_argument(
         "--gaps",
         action="store_true",

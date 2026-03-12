@@ -4,6 +4,7 @@
 Usage:
     poetry run with-local-db python scripts/inspect_candidate.py <partition_id>
     poetry run with-remote-db python scripts/inspect_candidate.py rechGJvgloO4z6uYD
+    On server: poetry run python scripts/inspect_candidate.py --local <partition_id>
 
 This script displays all normalized information about a candidate including:
 - Raw candidate data
@@ -29,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 
+from talent_matching.script_env import apply_local_db
 from scripts.inspect_utils import format_value, get_connection, print_field, print_section
 
 load_dotenv()
@@ -67,6 +69,12 @@ def inspect_candidate(partition_id: str):
     print_field("Skills", raw["skills_raw"])
     print_field("CV URL", raw["cv_url"])
     print_field("CV Text", raw["cv_text"])
+    print_field("CV Text (PDF extracted)", raw.get("cv_text_pdf"), 0, 200)
+    if raw.get("cv_extraction_method") or raw.get("cv_extraction_pages") is not None:
+        print_field("CV Extraction Method", raw.get("cv_extraction_method"), 0)
+        print_field("CV Extraction Pages", raw.get("cv_extraction_pages"), 0)
+        print_field("CV Extraction Cost (USD)", raw.get("cv_extraction_cost_usd"), 0)
+        print_field("CV Extraction Model", raw.get("cv_extraction_model"), 0)
     print_field("Professional Summary", raw["professional_summary"])
     print_field("Proof of Work", raw["proof_of_work"])
     print_field("Salary Range", raw["salary_range_raw"])
@@ -75,6 +83,7 @@ def inspect_candidate(partition_id: str):
     print_field("Earn Profile", raw["earn_profile_url"])
     print_field("GitHub", raw["github_url"])
     print_field("Work Experience Raw", raw["work_experience_raw"])
+    print_field("Job Status Raw", raw.get("job_status_raw"))
     print_field("Ingested At", raw["ingested_at"])
     print_field("Updated At", raw["updated_at"])
     print_field("Processing Status", raw["processing_status"])
@@ -457,6 +466,7 @@ def inspect_candidate(partition_id: str):
 
 
 def main():
+    apply_local_db()
     if len(sys.argv) < 2:
         print("Usage: python scripts/inspect_candidate.py <partition_id>")
         print("Example: python scripts/inspect_candidate.py rechGJvgloO4z6uYD")

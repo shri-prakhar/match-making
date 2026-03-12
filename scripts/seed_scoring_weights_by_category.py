@@ -2,6 +2,7 @@
 
 Run against remote DB: poetry run with-remote-db python scripts/seed_scoring_weights_by_category.py
 Run against local DB:  poetry run with-local-db python scripts/seed_scoring_weights_by_category.py
+On server: poetry run python scripts/seed_scoring_weights_by_category.py --local
 
   --list   Only list distinct job_category from normalized_jobs and from scoring_weights; do not update.
   --dry-run  Print what would be updated/inserted; do not write to DB.
@@ -19,6 +20,7 @@ from sqlalchemy import select
 
 from talent_matching.db import get_session
 from talent_matching.models.jobs import NormalizedJob
+from talent_matching.script_env import apply_local_db
 from talent_matching.models.scoring_weights import ScoringWeightsRecord
 
 # Keys that must sum to 1.0 (normalized before write).
@@ -215,8 +217,14 @@ def _apply(session, dry_run: bool) -> None:
 
 
 def main() -> None:
+    apply_local_db()
     parser = argparse.ArgumentParser(
         description="Seed or update scoring_weights with manual per-category weights."
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local Postgres (when running on the server).",
     )
     parser.add_argument(
         "--list", action="store_true", help="List job categories only; do not update."

@@ -9,6 +9,7 @@ For each matched candidate:
 Usage:
     poetry run with-local-db python scripts/analyze_matches.py <partition_id>
     poetry run with-remote-db python scripts/analyze_matches.py recumPHbWDgLHf6jX
+    On server: poetry run python scripts/analyze_matches.py --local <partition_id>
 
 For remote: poetry run remote-ui or poetry run local-matchmaking must be running.
 """
@@ -22,6 +23,8 @@ from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 
 load_dotenv()
+
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 
 def get_connection():
@@ -309,6 +312,7 @@ def run_analysis(partition_id: str) -> None:
 
 
 def main():
+    apply_local_db()
     if len(sys.argv) < 2:
         print(
             "Usage: poetry run with-remote-db python scripts/analyze_matches.py <partition_id>",

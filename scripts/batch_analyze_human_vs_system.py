@@ -9,6 +9,7 @@ Usage:
     poetry run with-remote-db python scripts/batch_analyze_human_vs_system.py
     poetry run with-remote-db python scripts/batch_analyze_human_vs_system.py --limit 20
     poetry run with-remote-db python scripts/batch_analyze_human_vs_system.py --output summary.json
+    On server: poetry run python scripts/batch_analyze_human_vs_system.py --local
 
 Requires:
     - AIRTABLE_BASE_ID, AIRTABLE_ATS_TABLE_ID, AIRTABLE_API_KEY in .env
@@ -28,6 +29,8 @@ load_dotenv()
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
+
+from talent_matching.script_env import apply_local_db
 
 # Import from same scripts dir (scripts is not a package)
 _analyze_path = os.path.join(os.path.dirname(__file__), "analyze_human_vs_system.py")
@@ -80,8 +83,14 @@ def has_human_selections(record: dict) -> bool:
 
 
 def main() -> None:
+    apply_local_db()
     parser = argparse.ArgumentParser(
         description="Batch human vs system analysis for jobs with recruiter selections"
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use local Postgres (when running on the server).",
     )
     parser.add_argument(
         "--limit",
