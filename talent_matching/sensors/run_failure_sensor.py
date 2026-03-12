@@ -2,11 +2,22 @@
 
 Known failures are tagged with a specific category (e.g. PDF_EXTRACTION_FAILED).
 Unknown failures are tagged with UNKNOWN_FAILURE so they surface for investigation.
+
+When candidate_pipeline fails at normalization (MISSING_DESIRED_JOB_CATEGORY or
+INSUFFICIENT_CV_DATA), clears that partition's DB data so no stale normalized/
+vector/match data remains.
 """
 
 import dagster as dg
 
+from talent_matching.db import get_session
+from talent_matching.utils.clear_candidate_data import clear_candidate_partition_data
+
 FAILURE_TAG = "failure_type"
+
+# Failure types that indicate normalization failed; we clear partition DB data.
+NORMALIZATION_FAILURE_TAGS = {"MISSING_DESIRED_JOB_CATEGORY", "INSUFFICIENT_CV_DATA"}
+CANDIDATE_PIPELINE_JOB = "candidate_pipeline"
 
 KNOWN_FAILURES: list[tuple[str, list[str]]] = [
     (
@@ -106,6 +117,18 @@ def run_failure_tagger(context: dg.RunFailureSensorContext) -> None:
     context.instance.add_run_tags(run_id, {FAILURE_TAG: tag_value})
 
     context.log.info(f"Tagged failed run {run_id} ({job_name}) with {FAILURE_TAG}={tag_value}")
+
+    # Clear partition DB data when candidate_pipeline fails at normalization
+    if job_name == CANDIDATE_PIPELINE_JOB and (all_tags & NORMALIZATION_FAILURE_TAGS):
+        partition_key = getattr(context, "partition_key", None)
+        if partition_key:
+            session = get_session()
+            if clear_candidate_partition_data(session, partition_key):
+                session.commit()
+                context.log.info(
+                    f"Cleared DB data for partition {partition_key} (normalization failure)"
+                )
+            session.close()
 
     # Telegram alert for critical failures: UNKNOWN_FAILURE or multiple known types
     should_alert = "UNKNOWN_FAILURE" in all_tags or len(all_tags) > 1
