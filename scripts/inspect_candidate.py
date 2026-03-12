@@ -30,8 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 
-from talent_matching.script_env import apply_local_db
 from scripts.inspect_utils import format_value, get_connection, print_field, print_section
+from talent_matching.script_env import apply_local_db
 
 load_dotenv()
 

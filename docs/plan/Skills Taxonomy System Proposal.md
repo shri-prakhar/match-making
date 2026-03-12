@@ -1,7 +1,7 @@
 # Skills Taxonomy System Proposal
 
-> **Version:** 1.0  
-> **Date:** February 2026  
+> **Version:** 1.0
+> **Date:** February 2026
 > **Purpose:** Define a unified skills taxonomy system with LLM-assisted skill normalization, rating, and matching
 
 ---
@@ -89,14 +89,14 @@ Based on the current dataset, here are the canonical skills to seed:
 
 **Programming Languages:**
 ```
-TypeScript, JavaScript, Rust, Python, Go, Solidity, Java, Kotlin, 
+TypeScript, JavaScript, Rust, Python, Go, Solidity, Java, Kotlin,
 Scala, C, C++, Ruby, Move, SQL
 ```
 
 **Frameworks & Libraries:**
 ```
-React, Next.js, Node.js, Express.js, Angular, Vue.js, SolidJS, 
-Svelte, Anchor, Hardhat, Foundry, Django, Flask, FastAPI, 
+React, Next.js, Node.js, Express.js, Angular, Vue.js, SolidJS,
+Svelte, Anchor, Hardhat, Foundry, Django, Flask, FastAPI,
 Spring Boot, NestJS, TanStack Query, Zustand, Redux
 ```
 
@@ -107,26 +107,26 @@ PostgreSQL, MongoDB, MySQL, Redis, RocksDB, Supabase, Firebase
 
 **Infrastructure & DevOps:**
 ```
-Docker, Kubernetes, AWS, GCP, Azure, Terraform, GitHub Actions, 
+Docker, Kubernetes, AWS, GCP, Azure, Terraform, GitHub Actions,
 CI/CD, Nginx, HAProxy
 ```
 
 **Blockchain & Web3:**
 ```
-Solana, Ethereum, Cosmos, Sui, Polkadot, Mina, DeFi, NFT, 
+Solana, Ethereum, Cosmos, Sui, Polkadot, Mina, DeFi, NFT,
 Cross-chain, ZK Proofs, Smart Contracts
 ```
 
 **Tools & Protocols:**
 ```
-GraphQL, REST API, gRPC, Kafka, RabbitMQ, WebSocket, 
+GraphQL, REST API, gRPC, Kafka, RabbitMQ, WebSocket,
 TradingView, Jito, Jupiter, Meteora, Metaplex
 ```
 
 **Domains & Skills:**
 ```
-AI Agents, Machine Learning, Full Stack, Backend, Frontend, 
-DevRel, DevOps, Protocol Engineering, Trading Systems, 
+AI Agents, Machine Learning, Full Stack, Backend, Frontend,
+DevRel, DevOps, Protocol Engineering, Trading Systems,
 SDK Development, Mobile Development
 ```
 
@@ -168,17 +168,17 @@ def normalize_skill(raw_skill: str) -> Skill:
     """
     # Step 1: Clean the input
     cleaned = raw_skill.strip().lower()
-    
+
     # Step 2: Check exact match in skills table
     skill = db.query(Skills).filter(func.lower(Skills.name) == cleaned).first()
     if skill:
         return skill
-    
+
     # Step 3: Check aliases table
     alias = db.query(SkillAliases).filter(func.lower(SkillAliases.alias) == cleaned).first()
     if alias:
         return alias.skill
-    
+
     # Step 4: LLM resolution for unknown skill
     return resolve_unknown_skill_with_llm(raw_skill)
 
@@ -188,17 +188,17 @@ def resolve_unknown_skill_with_llm(raw_skill: str) -> Skill:
     Use LLM to decide: map to existing skill or create new.
     """
     existing_skills = db.query(Skills.name).all()
-    
+
     response = llm.complete(
         prompt=SKILL_RESOLUTION_PROMPT.format(
             unknown_skill=raw_skill,
             existing_skills=existing_skills
         )
     )
-    
+
     # Response format: {"action": "map", "target": "TypeScript"}
     # or: {"action": "create", "name": "Cairo", "description": "..."}
-    
+
     if response["action"] == "map":
         skill = db.query(Skills).filter(Skills.name == response["target"]).first()
         # Add alias for future lookups
@@ -305,19 +305,19 @@ Two approaches:
 ```python
 def calculate_role_fitness(candidate_skills, role):
     role_req = ROLE_REQUIREMENTS[role]
-    
+
     # Score core skills (weighted by rating)
     core_score = sum(
         candidate_skills.get(skill, {}).get('rating', 0) / 5
         for skill in role_req['core_skills']
     ) / len(role_req['core_skills'])
-    
+
     # Score bonus skills
     bonus_score = sum(
         candidate_skills.get(skill, {}).get('rating', 0) / 5
         for skill in role_req['bonus_skills']
     ) / len(role_req['bonus_skills'])
-    
+
     return (core_score * 0.7) + (bonus_score * 0.3)
 ```
 
@@ -325,13 +325,13 @@ def calculate_role_fitness(candidate_skills, role):
 ```python
 def calculate_role_fitness_llm(candidate_skills, desired_role, cv_text):
     prompt = f"""
-    Given this candidate's skills and their CV, rate their fitness 
+    Given this candidate's skills and their CV, rate their fitness
     for the role "{desired_role}" on a scale of 1-10.
-    
+
     Skills with ratings: {candidate_skills}
-    
+
     CV Summary: {cv_text[:2000]}
-    
+
     Return JSON: {{"fitness_score": <1-10>, "reasoning": "..."}}
     """
     return llm.complete(prompt)
@@ -367,7 +367,7 @@ CREATE TABLE skills (
     name            TEXT NOT NULL UNIQUE,           -- "TypeScript"
     slug            TEXT NOT NULL UNIQUE,           -- "typescript"
     description     TEXT,                           -- "Typed superset of JavaScript"
-    
+
     -- Metadata
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     created_by      VARCHAR(50) DEFAULT 'seed',     -- 'seed', 'llm', 'manual'
@@ -386,11 +386,11 @@ CREATE TABLE skill_aliases (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     alias           TEXT NOT NULL,                  -- "TS", "Typescript", "typescript"
     skill_id        UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    
+
     -- Metadata
     added_at        TIMESTAMPTZ DEFAULT NOW(),
     added_by        VARCHAR(50) DEFAULT 'manual',   -- 'seed', 'llm', 'manual'
-    
+
     CONSTRAINT unique_alias UNIQUE (alias)
 );
 
@@ -408,27 +408,27 @@ CREATE TABLE candidate_skills (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id        UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
     skill_id            UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    
+
     -- Rating & Experience
     rating              INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
     years_experience    INTEGER,                    -- NULL if not determinable
-    
+
     -- Context for vectorization
     notable_achievement TEXT,                       -- Best example of skill usage
     skill_vector        VECTOR(1536),               -- Embedding of achievement
-    
+
     -- Metadata
     rated_at            TIMESTAMPTZ DEFAULT NOW(),
     rating_model        VARCHAR(50),                -- LLM model used for rating
     rating_confidence   FLOAT,                      -- LLM confidence (0-1)
-    
+
     CONSTRAINT unique_candidate_skill UNIQUE (candidate_id, skill_id)
 );
 
 CREATE INDEX idx_candidate_skills_candidate ON candidate_skills(candidate_id);
 CREATE INDEX idx_candidate_skills_skill ON candidate_skills(skill_id);
 CREATE INDEX idx_candidate_skills_rating ON candidate_skills(rating);
-CREATE INDEX idx_candidate_skill_vec ON candidate_skills 
+CREATE INDEX idx_candidate_skill_vec ON candidate_skills
     USING hnsw (skill_vector vector_cosine_ops);
 ```
 
@@ -441,33 +441,33 @@ CREATE INDEX idx_candidate_skill_vec ON candidate_skills
 CREATE TABLE candidate_experiences (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id        UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- Position details
     company_name        TEXT NOT NULL,
     position_title      TEXT NOT NULL,
-    
+
     -- Duration
     start_date          DATE,
     end_date            DATE,                       -- NULL = current position
     years_experience    FLOAT,                      -- Computed from dates (e.g., 2.5)
     is_current          BOOLEAN DEFAULT FALSE,
-    
+
     -- Description (for vectorization)
     description         TEXT,                       -- Summary of role/responsibilities
-    
+
     -- Vector for semantic matching
     position_vector     VECTOR(1536),               -- Embedding of description
-    
+
     -- Ordering
     position_order      INTEGER NOT NULL,           -- 1 = most recent
-    
+
     -- Metadata
     created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_experiences_candidate ON candidate_experiences(candidate_id);
 CREATE INDEX idx_experiences_company ON candidate_experiences(company_name);
-CREATE INDEX idx_position_vec ON candidate_experiences 
+CREATE INDEX idx_position_vec ON candidate_experiences
     USING hnsw (position_vector vector_cosine_ops);
 ```
 
@@ -480,22 +480,22 @@ CREATE INDEX idx_position_vec ON candidate_experiences
 CREATE TABLE candidate_github_metrics (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id            UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- Profile info
     github_username         TEXT NOT NULL,
     github_url              TEXT,
-    
+
     -- Basic metrics
     public_repos            INTEGER DEFAULT 0,
     total_stars             INTEGER DEFAULT 0,
     followers               INTEGER DEFAULT 0,
-    
+
     -- Languages (from repos)
     languages               TEXT[],                 -- Top languages
-    
+
     -- Fetch metadata
     fetched_at              TIMESTAMPTZ DEFAULT NOW(),
-    
+
     CONSTRAINT unique_github_per_candidate UNIQUE (candidate_id)
 );
 ```
@@ -509,18 +509,18 @@ CREATE TABLE candidate_github_metrics (
 CREATE TABLE candidate_role_fitness (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id    UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- Role
     role_name       TEXT NOT NULL,                  -- "Backend Developer"
-    
+
     -- Score
     fitness_score   FLOAT NOT NULL,                 -- 0.0 - 1.0
     score_breakdown JSONB,                          -- Detailed breakdown
-    
+
     -- Metadata
     computed_at     TIMESTAMPTZ DEFAULT NOW(),
     algorithm_version VARCHAR(50),
-    
+
     CONSTRAINT unique_candidate_role UNIQUE (candidate_id, role_name)
 );
 
@@ -537,7 +537,7 @@ CREATE INDEX idx_role_fitness_score ON candidate_role_fitness(role_name, fitness
 For unknown skills → decide map or create:
 
 ```
-You are a technical skills taxonomy expert. Given an unknown skill, decide 
+You are a technical skills taxonomy expert. Given an unknown skill, decide
 whether it should be mapped to an existing skill or created as a new skill.
 
 Unknown skill: "{unknown_skill}"
@@ -615,7 +615,7 @@ Candidate CV:
 Rate each attribute from 1-5 based on evidence in the CV:
 
 1. **Leadership** (1=IC only, 3=led small projects, 5=led teams/orgs)
-   Look for: "Led team of X", "Managed", "Architected", "Mentored", 
+   Look for: "Led team of X", "Managed", "Architected", "Mentored",
    decision-making authority, hiring/building teams
 
 2. **Autonomy** (1=needs guidance, 3=independent on tasks, 5=founder-type self-starter)

@@ -102,6 +102,16 @@ def create_matches_table(
                 "description": "Position in shortlist (1 = best)",
                 "options": {"precision": 0},
             },
+            {
+                "name": "Date Created",
+                "type": "dateTime",
+                "description": "When this match was created (matchmaking run timestamp)",
+                "options": {
+                    "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
+                    "timeFormat": {"name": "24hour", "format": "HH:mm"},
+                    "timeZone": "utc",
+                },
+            },
         ],
     }
     with httpx.Client(timeout=30.0) as client:

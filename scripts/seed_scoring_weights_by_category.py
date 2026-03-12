@@ -20,8 +20,8 @@ from sqlalchemy import select
 
 from talent_matching.db import get_session
 from talent_matching.models.jobs import NormalizedJob
-from talent_matching.script_env import apply_local_db
 from talent_matching.models.scoring_weights import ScoringWeightsRecord
+from talent_matching.script_env import apply_local_db
 
 # Keys that must sum to 1.0 (normalized before write).
 _VECTOR_SUB_KEYS = (

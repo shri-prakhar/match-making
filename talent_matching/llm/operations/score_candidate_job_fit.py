@@ -13,13 +13,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from talent_matching.resources.openrouter import OpenRouterResource
 
+from talent_matching.llm.job_category_prompts_loader import get_refinement_prompt
 from talent_matching.utils.llm_text_validation import (
     require_meaningful_text,
     require_meaningful_text_fields,
 )
 
 # Bump this version when the prompt changes
-PROMPT_VERSION = "1.2.0"
+PROMPT_VERSION = "1.3.0"  # v1.3.0: inject per-job-category refinement block (DB or default)
 
 # Use a more capable model for reasoning/scoring tasks
 DEFAULT_MODEL = "openai/gpt-4o"
@@ -61,6 +62,7 @@ async def score_candidate_job_fit(
     non_negotiables: str | None = None,
     nice_to_have: str | None = None,
     location_raw: str | None = None,
+    job_category: str | None = None,
 ) -> dict[str, Any]:
     """Score a candidate against a job (1-10, pros, cons, fulfills_all_must_haves).
 
@@ -74,6 +76,8 @@ async def score_candidate_job_fit(
         non_negotiables: Recruiter-provided hard requirements from Airtable (Non Negotiables column)
         nice_to_have: Recruiter-provided nice-to-have preferences from Airtable (Nice-to-have column)
         location_raw: Recruiter-specified required/preferred locations from Airtable
+        job_category: Job category for this role; when set, injects category-specific evaluation
+            guidance (from DB or in-code default) into the user prompt.
 
     Returns:
         Dict with fit_score, pros, cons, fulfills_all_must_haves
@@ -133,6 +137,13 @@ async def score_candidate_job_fit(
         },
     )
 
+    category_block = ""
+    if job_category and str(job_category).strip():
+        refinement_prompt = get_refinement_prompt(str(job_category).strip())
+        category_block = (
+            f"\n\nFOR THIS ROLE (job category: {job_category.strip()}):\n{refinement_prompt}\n"
+        )
+
     user_content = f"""Candidate Profile (full, normalized):
 {candidate_json}
 
@@ -145,7 +156,7 @@ Normalized Job Requirements:
 MUST-HAVE SKILLS (candidate must fulfill ALL of these):
 {must_haves_text if must_haves_text else "(None specified)"}
 {recruiter_section + chr(10) if recruiter_section else ""}
-
+{category_block}
 Evaluate the candidate against the job. Return JSON with fit_score (1-10), pros, cons, and fulfills_all_must_haves."""
 
     response = await openrouter.complete(

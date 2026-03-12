@@ -1,0 +1,21 @@
+Fetching all records from Jobs and ATS tables (report-only, no deletions)...
+  Warning: Jobs table returned 403 — skipping. Client error '403 Forbidden' for url 'https://api.airtable.com/v0/appBm4ITQiCAgZnRR/tbl9KNjT3G08f6oXh'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+  Warning: ATS table returned 403 — skipping. Client error '403 Forbidden' for url 'https://api.airtable.com/v0/appBm4ITQiCAgZnRR/tblrbhITEIBOxwcQV'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+
+Jobs table (e.g. Customers STT)
+----------------------------------------
+Table ID: tbl9KNjT3G08f6oXh
+Total records: 0
+Dead (no name + no/short description): 0
+
+ATS table
+----------------------------------------
+Table ID: tblrbhITEIBOxwcQV
+Total records: 0
+Dead (no name + no/short description): 0
+
+---
+No destructive action was taken. To remove these from Airtable, delete them manually
+or run a separate script after you confirm.

@@ -27,7 +27,6 @@ from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
-from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.config.scoring import get_weights_for_job_category  # noqa: E402
 from talent_matching.matchmaking.scoring import (  # noqa: E402
     candidate_seniority_scale,
@@ -44,6 +43,7 @@ from talent_matching.matchmaking.scoring import (  # noqa: E402
     tenure_instability_penalty,
 )
 from talent_matching.resources.matchmaking import MatchmakingResource  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 TOP_N_PER_JOB = 20
 

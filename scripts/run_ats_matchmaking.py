@@ -24,7 +24,6 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
-from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.db import get_session  # noqa: E402
 from talent_matching.llm.operations.embed_text import embed_text  # noqa: E402
 from talent_matching.llm.operations.normalize_job import (  # noqa: E402
@@ -34,6 +33,7 @@ from talent_matching.llm.operations.normalize_job import (  # noqa: E402
 )
 from talent_matching.resources.matchmaking import MatchmakingResource  # noqa: E402
 from talent_matching.resources.openrouter import OpenRouterResource  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.sensors.ats_matchmaking_sensor import (  # noqa: E402
     _ingest_raw_job,
 )

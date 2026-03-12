@@ -255,7 +255,7 @@ Turn diverse, inconsistent profile signals into:
 ## Diagram: Current State
 
 > [TODO: Customize this diagram to show the current pain points and data flow]
-> 
+>
 
 ```mermaid
 flowchart TB

@@ -1,0 +1,15 @@
+---
+description: Write a failing unit test for each bug before fixing it; fix until the test passes
+alwaysApply: true
+---
+
+# Bug Fix: Test First
+
+For every bug fix:
+
+1. **Write a unit test first** that would have caught the bug (or that fails with the current buggy behavior).
+2. **Run the test** and confirm it fails (or would have failed before the fix).
+3. **Implement the fix** so that the new test passes.
+4. **Run the test again** to confirm the fix — the test must pass.
+
+This keeps bugs from reappearing and documents the intended behavior.

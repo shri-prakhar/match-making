@@ -74,9 +74,7 @@ def get_job_partition_ids(limit: int) -> list[str]:
 
     session = get_session()
     rows = session.execute(
-        select(RawJob.airtable_record_id).where(
-            RawJob.airtable_record_id.isnot(None)
-        ).limit(limit)
+        select(RawJob.airtable_record_id).where(RawJob.airtable_record_id.isnot(None)).limit(limit)
     ).fetchall()
     session.close()
     return [r[0] for r in rows if r[0] and str(r[0]).strip()]
@@ -222,7 +220,10 @@ def main() -> int:
     remote_host = os.getenv("REMOTE_HOST")
     remote_dir = os.getenv("REMOTE_PROJECT_DIR", "/root/match-making")
     if not on_server and not remote_host:
-        print("REMOTE_HOST not set in .env (or use --on-server to run on the server).", file=sys.stderr)
+        print(
+            "REMOTE_HOST not set in .env (or use --on-server to run on the server).",
+            file=sys.stderr,
+        )
         return 1
     if on_server:
         remote_dir = os.getcwd()
@@ -254,7 +255,10 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 if not candidate_ids:
-                    print("Run sync and ingest first, or use --jobs-only for matchmaking only.", file=sys.stderr)
+                    print(
+                        "Run sync and ingest first, or use --jobs-only for matchmaking only.",
+                        file=sys.stderr,
+                    )
                     return 1
             else:
                 candidate_ids = candidate_ids[: args.candidates]
@@ -287,7 +291,11 @@ def main() -> int:
         print("Sync done.\n")
 
     if not args.jobs_only:
-        step = "Step 2" if (args.sync_candidates or args.all_candidates) and not args.jobs_only else "Step 1"
+        step = (
+            "Step 2"
+            if (args.sync_candidates or args.all_candidates) and not args.jobs_only
+            else "Step 1"
+        )
         print(f"{step}: Launching candidate_pipeline backfill ({len(candidate_ids)} partitions)...")
         if len(candidate_ids) > MAX_PARTITIONS_PER_BACKFILL:
             code = run_remote_backfill_chunked(

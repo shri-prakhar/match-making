@@ -24,11 +24,7 @@ class GitHubAPIResource(ConfigurableResource):
 
     api_token: str = Field(
         default="",
-        description="GitHub API token (leave empty for mock mode)",
-    )
-    mock_mode: bool = Field(
-        default=True,
-        description="If True, return mock data instead of calling GitHub API",
+        description="GitHub API token (GITHUB_TOKEN env var recommended for 5000 req/hr)",
     )
 
     def get_user_stats(self, username: str) -> dict[str, Any]:
@@ -40,11 +36,10 @@ class GitHubAPIResource(ConfigurableResource):
         Returns:
             Dictionary containing GitHub activity metrics
         """
-        if self.mock_mode or not self.api_token:
+        if not self.api_token:
             return self._mock_user_stats(username)
 
         # Production implementation would go here
-        # For now, always use mock
         return self._mock_user_stats(username)
 
     def _mock_user_stats(self, username: str) -> dict[str, Any]:
@@ -112,7 +107,7 @@ class GitHubAPIResource(ConfigurableResource):
         Returns:
             Dictionary containing repository metrics
         """
-        if self.mock_mode or not self.api_token:
+        if not self.api_token:
             return self._mock_repo_stats(owner, repo)
 
         return self._mock_repo_stats(owner, repo)
@@ -168,7 +163,7 @@ class GitHubAPIResource(ConfigurableResource):
         Returns:
             List of repo dicts with name, full_name, clone_url, description, etc.
         """
-        if self.mock_mode or not self.api_token:
+        if not self.api_token:
             return self._mock_list_user_repos(username)
 
         with httpx.Client(timeout=30) as client:
@@ -202,7 +197,7 @@ class GitHubAPIResource(ConfigurableResource):
         Returns:
             Dict mapping language name to byte count, e.g. {"Python": 125000, "JavaScript": 45000}
         """
-        if self.mock_mode or not self.api_token:
+        if not self.api_token:
             return self._mock_repo_languages(owner, repo)
 
         with httpx.Client(timeout=30) as client:
@@ -239,7 +234,7 @@ class GitHubAPIResource(ConfigurableResource):
         Returns:
             List of tree entries: {path, type, sha, ...}
         """
-        if self.mock_mode or not self.api_token:
+        if not self.api_token:
             return self._mock_repo_tree(owner, repo)
 
         with httpx.Client(timeout=30) as client:
@@ -289,7 +284,7 @@ class GitHubAPIResource(ConfigurableResource):
         Returns:
             Decoded file content as string
         """
-        if self.mock_mode or not self.api_token:
+        if not self.api_token:
             return self._mock_file_contents(owner, repo, path)
 
         params = {}
@@ -321,12 +316,12 @@ class GitHubAPIResource(ConfigurableResource):
         Returns:
             Dictionary with rate limit information
         """
-        if self.mock_mode or not self.api_token:
+        if not self.api_token:
             return {
-                "limit": 5000,
-                "remaining": 4999,
+                "limit": 60,
+                "remaining": 60,
                 "reset_at": (datetime.now() + timedelta(hours=1)).isoformat(),
-                "mock": True,
+                "unauthenticated": True,
             }
 
         with httpx.Client(timeout=10) as client:

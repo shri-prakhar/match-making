@@ -30,7 +30,7 @@ load_dotenv()
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from talent_matching.script_env import apply_local_db
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 # Import from same scripts dir (scripts is not a package)
 _analyze_path = os.path.join(os.path.dirname(__file__), "analyze_human_vs_system.py")

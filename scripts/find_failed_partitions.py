@@ -12,13 +12,13 @@ Usage:
 import json
 import sys
 
-from talent_matching.script_env import apply_local_db
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 apply_local_db()
 
-from sqlalchemy import text
+from sqlalchemy import text  # noqa: E402
 
-from talent_matching.db import get_session
+from talent_matching.db import get_session  # noqa: E402
 
 BACKFILL_ID = sys.argv[1] if len(sys.argv) > 1 else None
 

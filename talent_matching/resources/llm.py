@@ -14,7 +14,7 @@ from pydantic import Field
 
 class MockLLMResource(ConfigurableResource):
     """Mock LLM resource that simulates OpenAI-style completions.
-    
+
     In production, this would be replaced with an actual OpenAI or Anthropic resource
     that makes real API calls.
     """
@@ -30,29 +30,31 @@ class MockLLMResource(ConfigurableResource):
 
     def normalize_cv(self, raw_cv_text: str) -> dict[str, Any]:
         """Normalize a CV into structured format.
-        
+
         In production, this would send the CV text to an LLM with a normalization prompt.
-        
+
         Args:
             raw_cv_text: Raw text extracted from a CV/resume
-            
+
         Returns:
             Normalized candidate profile as a dictionary
         """
         # Generate mock normalized data
         mock_skills = ["Python", "JavaScript", "Rust", "Solana", "React", "PostgreSQL"]
         selected_skills = random.sample(mock_skills, k=random.randint(2, 5))
-        
+
         return {
             "name": f"Candidate {uuid.uuid4().hex[:8]}",
             "years_of_experience": random.randint(1, 15),
-            "current_role": random.choice([
-                "Senior Software Engineer",
-                "Full Stack Developer", 
-                "Backend Engineer",
-                "Blockchain Developer",
-                "DevOps Engineer",
-            ]),
+            "current_role": random.choice(
+                [
+                    "Senior Software Engineer",
+                    "Full Stack Developer",
+                    "Backend Engineer",
+                    "Blockchain Developer",
+                    "DevOps Engineer",
+                ]
+            ),
             "summary": "Experienced developer with a passion for building scalable systems.",
             "skills": {
                 "languages": [s for s in selected_skills if s in ["Python", "JavaScript", "Rust"]],
@@ -62,7 +64,9 @@ class MockLLMResource(ConfigurableResource):
             },
             "experience": [
                 {
-                    "company": random.choice(["Acme Corp", "TechStart", "BlockChain Labs", "DeFi Protocol"]),
+                    "company": random.choice(
+                        ["Acme Corp", "TechStart", "BlockChain Labs", "DeFi Protocol"]
+                    ),
                     "role": "Software Engineer",
                     "duration_months": random.randint(6, 36),
                     "description": "Built and maintained backend services.",
@@ -88,24 +92,26 @@ class MockLLMResource(ConfigurableResource):
 
     def normalize_job(self, raw_job_text: str) -> dict[str, Any]:
         """Normalize a job description into structured format.
-        
+
         Args:
             raw_job_text: Raw job description text
-            
+
         Returns:
             Normalized job requirements as a dictionary
         """
         mock_skills = ["Python", "JavaScript", "Rust", "Solana", "React", "PostgreSQL", "AWS"]
         must_have = random.sample(mock_skills, k=random.randint(2, 4))
         nice_to_have = random.sample([s for s in mock_skills if s not in must_have], k=2)
-        
+
         return {
-            "title": random.choice([
-                "Senior Backend Engineer",
-                "Full Stack Developer",
-                "Blockchain Engineer",
-                "Platform Engineer",
-            ]),
+            "title": random.choice(
+                [
+                    "Senior Backend Engineer",
+                    "Full Stack Developer",
+                    "Blockchain Engineer",
+                    "Platform Engineer",
+                ]
+            ),
             "seniority_level": random.choice(["junior", "mid", "senior", "lead"]),
             "employment_type": "full-time",
             "requirements": {
@@ -114,7 +120,9 @@ class MockLLMResource(ConfigurableResource):
                 "years_of_experience_min": random.randint(2, 5),
                 "years_of_experience_max": random.randint(6, 10),
                 "education_required": None,
-                "domain_experience": random.sample(["DeFi", "NFT", "Trading", "Infrastructure"], k=2),
+                "domain_experience": random.sample(
+                    ["DeFi", "NFT", "Trading", "Infrastructure"], k=2
+                ),
             },
             "role_description": "Join our team to build the next generation of blockchain applications.",
             "team_context": "Small, fast-moving team of 5-10 engineers.",
@@ -137,10 +145,10 @@ class MockLLMResource(ConfigurableResource):
 
     def score_candidate(self, normalized_profile: dict[str, Any]) -> dict[str, Any]:
         """Generate scores for a candidate profile.
-        
+
         Args:
             normalized_profile: Normalized candidate profile
-            
+
         Returns:
             Scoring breakdown with individual metric scores
         """

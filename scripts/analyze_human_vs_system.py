@@ -391,6 +391,7 @@ def analyze_one(partition_id: str, verbose: bool = True) -> dict | None:
 
 def main():
     from talent_matching.script_env import apply_local_db
+
     apply_local_db()
     if len(sys.argv) < 2:
         print("Usage: python scripts/analyze_human_vs_system.py <ats_record_id>")

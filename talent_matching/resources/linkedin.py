@@ -86,9 +86,7 @@ class LinkedInAPIResource(ConfigurableResource):
         if self.data_source == "proxycurl":
             return self._fetch_proxycurl(username, linkedin_url)
 
-        return self._empty_metrics(
-            username, error=f"Unknown data source: {self.data_source}"
-        )
+        return self._empty_metrics(username, error=f"Unknown data source: {self.data_source}")
 
     def _extract_username(self, input_str: str) -> str:
         """Extract LinkedIn username from URL or direct input."""
@@ -137,10 +135,7 @@ class LinkedInAPIResource(ConfigurableResource):
                 return self._empty_metrics(username, error="Insufficient credits")
 
             if response.status_code != 200:
-                return self._empty_metrics(
-                    username,
-                    error=f"API error: {response.status_code}"
-                )
+                return self._empty_metrics(username, error=f"API error: {response.status_code}")
 
             data = response.json()
 

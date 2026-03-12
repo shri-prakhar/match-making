@@ -80,9 +80,7 @@ class TwitterAPIResource(ConfigurableResource):
         Required fields: user.fields=public_metrics
         """
         url = f"{self.api_base_url}/users/by/username/{username}"
-        params = {
-            "user.fields": "public_metrics,created_at,description,verified"
-        }
+        params = {"user.fields": "public_metrics,created_at,description,verified"}
         headers = {
             "Authorization": f"Bearer {self.bearer_token}",
             "Content-Type": "application/json",
@@ -98,10 +96,7 @@ class TwitterAPIResource(ConfigurableResource):
                 return self._empty_metrics(username, error="Rate limit exceeded")
 
             if response.status_code != 200:
-                return self._empty_metrics(
-                    username,
-                    error=f"API error: {response.status_code}"
-                )
+                return self._empty_metrics(username, error=f"API error: {response.status_code}")
 
             data = response.json()
 

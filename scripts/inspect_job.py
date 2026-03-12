@@ -32,8 +32,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 
-from talent_matching.script_env import apply_local_db
 from scripts.inspect_utils import format_value, get_connection, print_field, print_section
+from talent_matching.script_env import apply_local_db
 
 load_dotenv()
 
@@ -217,7 +217,9 @@ def inspect_job(partition_id: str):
             )
             weights_row = cur.fetchone()
             if weights_row:
-                print(f"  Category: {weights_row['job_category']}  (from DB, updated {format_value(weights_row['updated_at'])})")
+                print(
+                    f"  Category: {weights_row['job_category']}  (from DB, updated {format_value(weights_row['updated_at'])})"
+                )
                 print("  Vector sub-weights (role/domain/culture/impact/technical):")
                 print_field("    role", round(weights_row["role_weight"], 4), 0)
                 print_field("    domain", round(weights_row["domain_weight"], 4), 0)
@@ -227,16 +229,36 @@ def inspect_job(partition_id: str):
                 print("  Top-level blend:")
                 print_field("    vector_weight", round(weights_row["vector_weight"], 4), 0)
                 print_field("    skill_fit_weight", round(weights_row["skill_fit_weight"], 4), 0)
-                print_field("    compensation_weight", round(weights_row["compensation_weight"], 4), 0)
+                print_field(
+                    "    compensation_weight", round(weights_row["compensation_weight"], 4), 0
+                )
                 print_field("    location_weight", round(weights_row["location_weight"], 4), 0)
-                print_field("    seniority_scale_weight", round(weights_row["seniority_scale_weight"], 4), 0)
+                print_field(
+                    "    seniority_scale_weight", round(weights_row["seniority_scale_weight"], 4), 0
+                )
                 print("  Skill fit sub-weights:")
-                print_field("    skill_rating_weight", round(weights_row["skill_rating_weight"], 4), 0)
-                print_field("    skill_semantic_weight", round(weights_row["skill_semantic_weight"], 4), 0)
+                print_field(
+                    "    skill_rating_weight", round(weights_row["skill_rating_weight"], 4), 0
+                )
+                print_field(
+                    "    skill_semantic_weight", round(weights_row["skill_semantic_weight"], 4), 0
+                )
                 print("  Max deductions:")
-                print_field("    seniority_max_deduction", round(weights_row["seniority_max_deduction"], 4), 0)
-                print_field("    seniority_level_max_deduction", round(weights_row["seniority_level_max_deduction"], 4), 0)
-                print_field("    tenure_instability_max_deduction", round(weights_row["tenure_instability_max_deduction"], 4), 0)
+                print_field(
+                    "    seniority_max_deduction",
+                    round(weights_row["seniority_max_deduction"], 4),
+                    0,
+                )
+                print_field(
+                    "    seniority_level_max_deduction",
+                    round(weights_row["seniority_level_max_deduction"], 4),
+                    0,
+                )
+                print_field(
+                    "    tenure_instability_max_deduction",
+                    round(weights_row["tenure_instability_max_deduction"], 4),
+                    0,
+                )
             else:
                 print(f"  Category: {job_category}")
                 print("  (No row in scoring_weights; matchmaking uses config defaults.)")
@@ -268,7 +290,9 @@ def inspect_job(partition_id: str):
             if key == "role" and seen_role:
                 continue
             text = narratives.get(key) or (
-                normalized.get("narrative_role") if key in ("role_description", "role") else normalized.get(f"narrative_{key}")
+                normalized.get("narrative_role")
+                if key in ("role_description", "role")
+                else normalized.get(f"narrative_{key}")
             )
             if key in ("role_description", "role"):
                 seen_role = True

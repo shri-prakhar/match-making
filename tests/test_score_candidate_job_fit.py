@@ -1,7 +1,7 @@
 """Tests for score_candidate_job_fit (LLM candidate-job scoring)."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -99,3 +99,27 @@ class TestScoreCandidateJobFit:
         user_content = mock_openrouter.complete.call_args.kwargs["messages"][1]["content"]
         assert "RECRUITER NON-NEGOTIABLES" not in user_content
         assert "REQUIRED LOCATION/REGION" not in user_content
+
+    def test_job_category_injects_refinement_block(
+        self, mock_openrouter, minimal_candidate, minimal_job
+    ):
+        """Passing job_category injects category-specific block (from get_refinement_prompt)."""
+        custom_refinement = "Focus on backend systems and API design experience."
+        with patch(
+            "talent_matching.llm.operations.score_candidate_job_fit.get_refinement_prompt",
+            return_value=custom_refinement,
+        ):
+            result = asyncio.run(
+                score_candidate_job_fit(
+                    mock_openrouter,
+                    minimal_candidate,
+                    MIN_JOB_DESC,
+                    minimal_job,
+                    [{"skill_name": "Python", "requirement_type": "must_have"}],
+                    job_category="Backend Developer",
+                )
+            )
+        assert result["fit_score"] == 7
+        user_content = mock_openrouter.complete.call_args.kwargs["messages"][1]["content"]
+        assert "FOR THIS ROLE (job category: Backend Developer)" in user_content
+        assert custom_refinement in user_content

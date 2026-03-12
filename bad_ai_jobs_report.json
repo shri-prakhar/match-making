@@ -1,0 +1,367 @@
+{
+  "max_llm_avg": 4.0,
+  "non_technical_only": false,
+  "jobs_analyzed": 3,
+  "jobs": [
+    {
+      "job_airtable_record_id": "recjDlNrpJfRRg7b4",
+      "job_title": "Rust Developer",
+      "job_category": "Rust Developer",
+      "company": "Job Board",
+      "avg_llm_shortlist": 1.0,
+      "human_selected_count": 27,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 27,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec1fUhv3K65gPUd6",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec6vPJF2Mr0GtUmC",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec7IaGUfodL2zlHA",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec84kgjxVZnGlqog",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec8vBv0K5DvaRWZU",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recAlxbDWEIFyhfZG",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recAwzmiTD2ToeyiS",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recFpVlO3bzR3b0Q3",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recH1o8VRyUJb2Kda",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recOzj2UJ8qZi4jYp",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recQb5p7EmprVHhKE",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recRuHhn3xgjBAn3i",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recU1JJarmDxBg24P",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recXYawS8N99fk38O",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recca1DIGxqK7Wpqc",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recdPaOahvtmyWC0k",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "receJlmaR1bFVFyEH",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recfZDxBIprjpuCj3",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recgjO1gK7AG4tjYF",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recjg1Qo0ZjMvA1VP",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recmt9RaxECXhiGAI",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recqLcKm66yo0OyUX",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recua231I1ZuKpp54",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recw5cmSszc2YY9kk",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recymzcZ4OgF7WQqL",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reczRZPU3iNfj0qDo",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reczRxRPapGh4FRn8",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "rec5yo8rhzVORjBDi",
+      "job_title": "Money Laundering Reporting Officer (MLRO)",
+      "job_category": "Compliance",
+      "company": "Altitude",
+      "avg_llm_shortlist": 1.4,
+      "human_selected_count": 17,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 17,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec1sQEYXhFnBxVHl",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recADqdlbG8iLM5OR",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recBZQoSmZL8vqMgX",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recEpgQ3rptaktgN0",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recJLufPYCIpGP4n1",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recJnX0Six1mcotw2",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recK9LQfPAoF455Fy",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recLiRbH2jmW8RtGl",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recPGl5E5clSLPDbV",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recRAIejiQYQ6bLko",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recRfKNfLJvDjcBRJ",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recSKMrcadqIbOxJd",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recSRDWtPIwdiDwcA",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recXsTBitIoer2rs8",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recaCEeBdZinJT2oT",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recnNJsD0sCRINMle",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reczJzt6P3wyAhFzK",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "recsi4mTmg3Cfhzee",
+      "job_title": "Lead, Validator & Staking Growth (Solana)",
+      "job_category": "Growth",
+      "company": "Raiku",
+      "avg_llm_shortlist": 1.73,
+      "human_selected_count": 10,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 10,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec15E1yxj3Hvjcxp",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec1gxkqdxNcNgzVJ",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec5n6NFLjuasxR6A",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec9AWcZR8ERmkf97",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recAGpgHj5rMt25zn",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recL22O96WFiJqfJn",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recN2BBdZPMVZuNdq",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recQglSlH8tH5dBoU",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recotNhbIerU4CSUZ",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recyFdjpTPfuGXMuA",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    }
+  ]
+}

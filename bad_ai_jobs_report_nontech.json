@@ -1,0 +1,667 @@
+{
+  "max_llm_avg": 4.0,
+  "non_technical_only": true,
+  "jobs_analyzed": 9,
+  "jobs": [
+    {
+      "job_airtable_record_id": "rec5yo8rhzVORjBDi",
+      "job_title": "Money Laundering Reporting Officer (MLRO)",
+      "job_category": "Compliance",
+      "company": "Altitude",
+      "avg_llm_shortlist": 1.4,
+      "human_selected_count": 17,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 17,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec1sQEYXhFnBxVHl",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recADqdlbG8iLM5OR",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recBZQoSmZL8vqMgX",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recEpgQ3rptaktgN0",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recJLufPYCIpGP4n1",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recJnX0Six1mcotw2",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recK9LQfPAoF455Fy",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recLiRbH2jmW8RtGl",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recPGl5E5clSLPDbV",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recRAIejiQYQ6bLko",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recRfKNfLJvDjcBRJ",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recSKMrcadqIbOxJd",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recSRDWtPIwdiDwcA",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recXsTBitIoer2rs8",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recaCEeBdZinJT2oT",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recnNJsD0sCRINMle",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reczJzt6P3wyAhFzK",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "recsi4mTmg3Cfhzee",
+      "job_title": "Lead, Validator & Staking Growth (Solana)",
+      "job_category": "Growth",
+      "company": "Raiku",
+      "avg_llm_shortlist": 1.73,
+      "human_selected_count": 10,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 10,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec15E1yxj3Hvjcxp",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec1gxkqdxNcNgzVJ",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec5n6NFLjuasxR6A",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec9AWcZR8ERmkf97",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recAGpgHj5rMt25zn",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recL22O96WFiJqfJn",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recN2BBdZPMVZuNdq",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recQglSlH8tH5dBoU",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recotNhbIerU4CSUZ",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recyFdjpTPfuGXMuA",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "rec1IwyAeeHUQitsw",
+      "job_title": "Business Development Director",
+      "job_category": "Business Development",
+      "company": "BuidlPad",
+      "avg_llm_shortlist": 1.8,
+      "human_selected_count": 8,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 8,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "recC6AbcBF5zGgj4g",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recTNDA8eAhsG502p",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recVTx2O6LE8VT84O",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recVXyDAY0AQd1zH9",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rece6zuwdY9ksDkQb",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recp2AwF5i98u3VDs",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recxpnKrbAqIds04f",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recydndAoCWHKZ0GJ",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "rece7iAGuBTfqpoJc",
+      "job_title": "Product Marketing Manager",
+      "job_category": "Growth, Marketing, Content Writer",
+      "company": "Squads",
+      "avg_llm_shortlist": 2.0,
+      "human_selected_count": 5,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 5,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "recE9lJdAprHrGlUX",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recKTeV1o6c0k2dgP",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recOud0VS958Rr86F",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recTSJoYXiv4wymyT",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recVCrvSvWj3vHwNl",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "recIqBsuF33YrIrMX",
+      "job_title": "Growth Analyst",
+      "job_category": "Growth",
+      "company": "Radarblock",
+      "avg_llm_shortlist": 2.0,
+      "human_selected_count": 13,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 13,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec3yN9I1mo2JDPxX",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec5MG1anevb86gip",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recJv2MefNPtSmKnh",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recLlrgg2NeUXkKIg",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recOGDVjgALuhuyAk",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recSDUzWUlIVgLCnv",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recUS43zjXxZNbLQS",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recVns65z4u0qF1Zl",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recZan9OZT3nttZM8",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reca1cyalLS3REgFO",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reciMINSwDIdglVGb",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rectOXBc0vBjrnPdO",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recvZ9Rtso4MBLC90",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "recpwjff4QeibeGha",
+      "job_title": "Compliance Operations Lead",
+      "job_category": "Compliance",
+      "company": "Altitude",
+      "avg_llm_shortlist": 2.08,
+      "human_selected_count": 8,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 8,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec5k0suZWPtWcTot",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec9aKO9CHiOQtJIB",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recEQCS5RlSWCsXiC",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recP0vYmZHhdLaR8d",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recQwU2MKfHpsJF7N",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recUMAdHPF3yamSEA",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recmisO2WArSe5lc6",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recwEspRWFmpmp1nY",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "recch29d7MaREcrvB",
+      "job_title": "Business Development Lead",
+      "job_category": "Business Development",
+      "company": "Radarblock",
+      "avg_llm_shortlist": 2.13,
+      "human_selected_count": 16,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 16,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec1AAR1OkwaEECdD",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rec9JKOERdEFg6ErW",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recH0UkCOQlNZZQmi",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recMEiskqNzxEeU9G",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recNXM2zkvgPRyq1Z",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recOBdjJOuIR0fjoj",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recQJLI3pBjdDSnnj",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recQXEW0WGYWT4xUS",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reca1cyalLS3REgFO",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recafvXtN9pNntrLK",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rechukMtrlDf0GbCV",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recqxYvBsmBKRpuRY",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recspOyN22kKW2MkS",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recvNidvNa4m0X1r7",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recvWpt8JYwCa5k1q",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recw7fm3QCZ0knlX8",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "rec2bjCVT0rRh0Bia",
+      "job_title": "Operations Manager",
+      "job_category": "Operations",
+      "company": "VeryAI",
+      "avg_llm_shortlist": 2.5,
+      "human_selected_count": 11,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 11,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec2D8vtJrI175Kyk",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recGSQbCZeMa4wlrU",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recQFgbqOCaRVba5X",
+          "exclusion_reason": "not_in_db",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recSWHSbywrQ7Vbd8",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recZAlzO7XPDZGG8g",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recgsXW7cK6qO3tGh",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reck0MDoX9TT5PqzH",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recr34hpMOsQGh92b",
+          "exclusion_reason": "location_prefilter",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recsBhehHwrubrquU",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recurgKYYuYU5VLEq",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recziZgX3T9SOsyG0",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    },
+    {
+      "job_airtable_record_id": "recnuhHToY0I7s8wy",
+      "job_title": "Product Designer",
+      "job_category": "Designer, Product Designer",
+      "company": "Buidlpad",
+      "avg_llm_shortlist": 4.0,
+      "human_selected_count": 4,
+      "in_shortlist_count": 0,
+      "not_in_shortlist_count": 4,
+      "missing_candidates": [
+        {
+          "candidate_airtable_record_id": "rec0S2LHi5cgtlDmM",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "recDlDQ9iPdfF30v3",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "reciuj3T4egHJq53Q",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        },
+        {
+          "candidate_airtable_record_id": "rectkRvYFZyMi5yJv",
+          "exclusion_reason": "job_category",
+          "combined_score_100": null,
+          "would_be_rank": null
+        }
+      ]
+    }
+  ]
+}

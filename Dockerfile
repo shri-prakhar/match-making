@@ -24,6 +24,7 @@ WORKDIR /opt/dagster/app
 
 COPY talent_matching/ talent_matching/
 COPY migrations/ migrations/
+COPY scripts/ scripts/
 COPY alembic.ini .
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

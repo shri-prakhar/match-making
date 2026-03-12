@@ -35,7 +35,7 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.script_env import apply_local_db
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 # Reuse human selection columns and Airtable fetch from analyze_human_vs_system (file-based import)
 _analyze_path = os.path.join(os.path.dirname(__file__), "analyze_human_vs_system.py")
@@ -104,11 +104,7 @@ def find_bad_ai_jobs(
 
     out = [dict(r) for r in rows]
     if non_technical_only:
-        out = [
-            r
-            for r in out
-            if not _is_technical_job_category(r.get("job_category") or "")
-        ]
+        out = [r for r in out if not _is_technical_job_category(r.get("job_category") or "")]
     if limit is not None:
         out = out[:limit]
     return out
@@ -140,7 +136,9 @@ def get_ground_truth_candidate_ids(conn, job_airtable_record_id: str) -> set[str
     )
     rows = cur.fetchall()
     cur.close()
-    return {r["candidate_airtable_record_id"] for r in rows if r.get("candidate_airtable_record_id")}
+    return {
+        r["candidate_airtable_record_id"] for r in rows if r.get("candidate_airtable_record_id")
+    }
 
 
 def get_match_candidate_ids(conn, job_airtable_record_id: str) -> set[str]:
@@ -196,7 +194,10 @@ def diagnose_candidate_exclusion(
     stderr = result.stderr or ""
 
     # Order of checks matters: first FAIL wins
-    if "FAIL: Candidate does not pass location" in stdout or "they never entered the scoring pool" in stdout:
+    if (
+        "FAIL: Candidate does not pass location" in stdout
+        or "they never entered the scoring pool" in stdout
+    ):
         return ("location_prefilter", None, None)
     if "FAIL: Candidate has no desired_job_categories" in stdout or "FAIL: Job category" in stdout:
         return ("job_category", None, None)
@@ -302,9 +303,7 @@ def run(
                     }
                 )
                 continue
-            reason, score, rank = diagnose_candidate_exclusion(
-                job_at_id, cand_at_id, script_dir
-            )
+            reason, score, rank = diagnose_candidate_exclusion(job_at_id, cand_at_id, script_dir)
             job_report["missing_candidates"].append(
                 {
                     "candidate_airtable_record_id": cand_at_id,
@@ -317,9 +316,7 @@ def run(
         report["jobs"].append(job_report)
 
         if verbose:
-            print(
-                f"\n[{i+1}/{len(bad_jobs)}] {job_at_id}  {job_title[:40]} @ {company}"
-            )
+            print(f"\n[{i+1}/{len(bad_jobs)}] {job_at_id}  {job_title[:40]} @ {company}")
             print(
                 f"    avg_llm={avg_llm:.2f}  human={len(human_ids)}  in_shortlist={len(human_ids & in_shortlist_ids)}  missing={len(missing_ids)}"
             )

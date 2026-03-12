@@ -29,12 +29,14 @@ from talent_matching.models.enums import (
     VerificationStatusEnum,
     proficiency_scale_for_prompt,
 )
+from talent_matching.models.ground_truth import GroundTruthOutcome
+from talent_matching.models.job_category_prompts import JobCategoryPromptsRecord
 from talent_matching.models.jobs import JobRequiredSkill, NormalizedJob
 from talent_matching.models.llm_costs import LLMCost
 from talent_matching.models.location_timezones import LocationTimezone
-from talent_matching.models.ground_truth import GroundTruthOutcome
 from talent_matching.models.matches import Match
 from talent_matching.models.raw import RawCandidate, RawJob
+from talent_matching.models.scoring_weights import ScoringWeightsRecord
 from talent_matching.models.skills import Skill, SkillAlias
 from talent_matching.models.vectors import CandidateVector, JobVector
 
@@ -60,6 +62,10 @@ __all__ = [
     # Raw tables
     "RawCandidate",
     "RawJob",
+    # Scoring weights
+    "ScoringWeightsRecord",
+    # Job category prompts
+    "JobCategoryPromptsRecord",
     # Skills
     "Skill",
     "SkillAlias",

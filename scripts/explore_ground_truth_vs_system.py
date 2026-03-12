@@ -27,8 +27,8 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.config.scoring import get_weights_for_job_category  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 
 def get_connection():
@@ -191,7 +191,9 @@ def main() -> None:
             (job_id,),
         )
         system_matches = cur.fetchall()
-        matches_by_airtable_id = {m["airtable_record_id"]: m for m in system_matches if m["airtable_record_id"]}
+        matches_by_airtable_id = {
+            m["airtable_record_id"]: m for m in system_matches if m["airtable_record_id"]
+        }
 
         # Ground-truth candidates: resolve names and get system scores
         cand_at_ids = [r["candidate_airtable_record_id"] for r in gt_candidates]
@@ -230,11 +232,18 @@ def main() -> None:
                     sys_match.get("culture_similarity_score"),
                 )
                 vec = (
-                    (weights.role_weight * rs + weights.domain_weight * ds + weights.culture_weight * cs) * 100
+                    (
+                        weights.role_weight * rs
+                        + weights.domain_weight * ds
+                        + weights.culture_weight * cs
+                    )
+                    * 100
                     if rs is not None and ds is not None and cs is not None
                     else None
                 )
-                print(f"      {name[:35]:35} | {outcome_str:12} | rank {rank:3} | score {_fmt(score)} | LLM {llm or '—'}/10 | vec {_fmt(vec)}")
+                print(
+                    f"      {name[:35]:35} | {outcome_str:12} | rank {rank:3} | score {_fmt(score)} | LLM {llm or '—'}/10 | vec {_fmt(vec)}"
+                )
             else:
                 print(f"      {name[:35]:35} | {outcome_str:12} | NOT in system matches")
 
@@ -251,9 +260,15 @@ def main() -> None:
 
         # Overlap
         gt_in_system = set(cand_at_ids) & set(matches_by_airtable_id.keys())
-        gt_ranks = [matches_by_airtable_id[aid]["rank"] for aid in gt_in_system if matches_by_airtable_id[aid].get("rank")]
+        gt_ranks = [
+            matches_by_airtable_id[aid]["rank"]
+            for aid in gt_in_system
+            if matches_by_airtable_id[aid].get("rank")
+        ]
         if gt_ranks:
-            print(f"\n    Overlap: {len(gt_in_system)}/{len(cand_at_ids)} GT in system | avg rank: {sum(gt_ranks)/len(gt_ranks):.1f}")
+            print(
+                f"\n    Overlap: {len(gt_in_system)}/{len(cand_at_ids)} GT in system | avg rank: {sum(gt_ranks)/len(gt_ranks):.1f}"
+            )
 
     cur.close()
     conn.close()

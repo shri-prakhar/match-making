@@ -12,7 +12,6 @@ Usage:
 
 import os
 import sys
-from uuid import UUID
 
 import numpy as np
 import psycopg2
@@ -22,27 +21,27 @@ from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv()
 
-from talent_matching.script_env import apply_local_db
-from talent_matching.config.scoring import get_weights_for_job_category
-from talent_matching.matchmaking.location_filter import (
-    parse_job_preferred_locations,
+from talent_matching.config.scoring import get_weights_for_job_category  # noqa: E402
+from talent_matching.matchmaking.location_filter import (  # noqa: E402
     candidate_passes_location_or_timezone,
+    parse_job_preferred_locations,
 )
-from talent_matching.matchmaking.scoring import (
+from talent_matching.matchmaking.scoring import (  # noqa: E402
+    candidate_seniority_scale,
     compensation_fit,
     cosine_similarity,
+    job_is_high_stakes,
+    job_required_seniority_scale,
     location_score,
+    seniority_level_penalty,
+    seniority_penalty_and_experience_score,
+    seniority_scale_fit,
     skill_coverage_score,
     skill_semantic_score,
-    seniority_penalty_and_experience_score,
-    candidate_seniority_scale,
-    job_required_seniority_scale,
-    seniority_scale_fit,
-    seniority_level_penalty,
     tenure_instability_penalty,
-    job_is_high_stakes,
 )
-from talent_matching.resources.matchmaking import MatchmakingResource
+from talent_matching.resources.matchmaking import MatchmakingResource  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 # Align with matches asset
 SKILL_MIN_THRESHOLD = 0.30
@@ -194,12 +193,16 @@ def main() -> int:
     }
 
     print("=" * 70)
-    print(f"  Score candidate vs job: {candidate.get('full_name')} vs {job.get('job_title')} @ {job.get('company_name')}")
+    print(
+        f"  Score candidate vs job: {candidate.get('full_name')} vs {job.get('job_title')} @ {job.get('company_name')}"
+    )
     print("=" * 70)
     print(f"  Job partition:    {job_partition_id}")
     print(f"  Job location:     {location_raw or 'None'}")
     print(f"  Candidate:        {candidate_partition_id}  ({candidate.get('full_name')})")
-    print(f"  Candidate loc:    {candidate.get('location_city')}, {candidate.get('location_country')} ({candidate.get('location_region')})")
+    print(
+        f"  Candidate loc:    {candidate.get('location_city')}, {candidate.get('location_country')} ({candidate.get('location_region')})"
+    )
     print()
 
     # 1. Location prefilter
@@ -211,7 +214,9 @@ def main() -> int:
         if passes:
             print(f"  PASS (candidate matches location or timezone for {job_locations})")
         else:
-            print(f"  FAIL: Candidate does not pass location/timezone for job locations {job_locations}.")
+            print(
+                f"  FAIL: Candidate does not pass location/timezone for job locations {job_locations}."
+            )
             print("  This is why they were excluded: they never entered the scoring pool.")
             conn.close()
             return 0
@@ -230,7 +235,9 @@ def main() -> int:
         conn.close()
         return 0
     elif job_category.lower() not in desired_normalized:
-        print(f"  FAIL: Job category '{job_category}' not in candidate's desired_job_categories: {list(desired_normalized)}.")
+        print(
+            f"  FAIL: Job category '{job_category}' not in candidate's desired_job_categories: {list(desired_normalized)}."
+        )
         print("  This is why they were excluded.")
         conn.close()
         return 0
@@ -248,7 +255,9 @@ def main() -> int:
     req_skills = matchmaking.get_job_required_skills([job_id]).get(job_id, [])
     cand_skills_list = matchmaking.get_candidate_skills([cand_id]).get(cand_id, [])
     must_have = [s["skill_name"] for s in req_skills if s.get("requirement_type") == "must_have"]
-    nice_to_have = [s["skill_name"] for s in req_skills if s.get("requirement_type") == "nice_to_have"]
+    nice_to_have = [
+        s["skill_name"] for s in req_skills if s.get("requirement_type") == "nice_to_have"
+    ]
     req_skills_with_min_years = [
         (s["skill_name"], int(s["min_years"]), s.get("requirement_type") or "must_have")
         for s in req_skills
@@ -276,9 +285,7 @@ def main() -> int:
     # Role similarity: max over position_* or experience
     position_keys = [k for k in cvecs if k.startswith("position_")]
     if job_role_vec is not None and position_keys:
-        role_sim = max(
-            cosine_similarity(job_role_vec, cvecs[k]) for k in position_keys
-        )
+        role_sim = max(cosine_similarity(job_role_vec, cvecs[k]) for k in position_keys)
     elif job_role_vec is not None and cvecs.get("experience") is not None:
         role_sim = cosine_similarity(job_role_vec, cvecs["experience"])
     else:
@@ -354,17 +361,15 @@ def main() -> int:
     job_salary_max = job.get("salary_max")
     comp_min = candidate.get("compensation_min")
     comp_max = candidate.get("compensation_max")
-    if job_salary_min is not None and not isinstance(job_salary_min, (int, float)):
+    if job_salary_min is not None and not isinstance(job_salary_min, int | float):
         job_salary_min = float(job_salary_min)
-    if job_salary_max is not None and not isinstance(job_salary_max, (int, float)):
+    if job_salary_max is not None and not isinstance(job_salary_max, int | float):
         job_salary_max = float(job_salary_max)
-    if comp_min is not None and not isinstance(comp_min, (int, float)):
+    if comp_min is not None and not isinstance(comp_min, int | float):
         comp_min = float(comp_min)
-    if comp_max is not None and not isinstance(comp_max, (int, float)):
+    if comp_max is not None and not isinstance(comp_max, int | float):
         comp_max = float(comp_max)
-    compensation_match_score = compensation_fit(
-        job_salary_min, job_salary_max, comp_min, comp_max
-    )
+    compensation_match_score = compensation_fit(job_salary_min, job_salary_max, comp_min, comp_max)
     location_match_score = location_score(
         candidate.get("timezone"),
         job_timezone,
@@ -373,7 +378,9 @@ def main() -> int:
 
     print("--- 3. Skill threshold ---")
     if skill_fit_score < SKILL_MIN_THRESHOLD:
-        print(f"  FAIL: skill_fit_score {skill_fit_score:.4f} < SKILL_MIN_THRESHOLD ({SKILL_MIN_THRESHOLD}).")
+        print(
+            f"  FAIL: skill_fit_score {skill_fit_score:.4f} < SKILL_MIN_THRESHOLD ({SKILL_MIN_THRESHOLD})."
+        )
         print("  This is why they were excluded (below minimum skill fit).")
         print(f"  Matching skills: {matching}")
         print(f"  Missing must-have: {missing_must}")
@@ -397,13 +404,19 @@ def main() -> int:
     combined_100 = round(combined_01 * 100.0, 2)
 
     print("--- 4. Scoring breakdown ---")
-    print(f"  Vector (raw):     {vector_score:.4f}  (Role: {role_sim:.4f}  Domain: {domain_sim:.4f}  Culture: {culture_sim:.4f}  Impact: {impact_sim:.4f}  Technical: {technical_sim:.4f})")
+    print(
+        f"  Vector (raw):     {vector_score:.4f}  (Role: {role_sim:.4f}  Domain: {domain_sim:.4f}  Culture: {culture_sim:.4f}  Impact: {impact_sim:.4f}  Technical: {technical_sim:.4f})"
+    )
     print(f"  Skill fit:        {skill_fit_score:.4f}")
     print(f"  Compensation:     {compensation_match_score:.4f}")
     print(f"  Experience:       {experience_match_score:.4f}")
     print(f"  Location:         {location_match_score:.4f}")
-    print(f"  Seniority scale fit: {scale_fit:.4f}  (cand scale: {cand_scale:.4f}, job req: {job_req_scale if job_req_scale is not None else 'N/A'})")
-    print(f"  Seniority penalty (years): -{seniority_penalty:.1f} (cap: -{weights.seniority_max_deduction})")
+    print(
+        f"  Seniority scale fit: {scale_fit:.4f}  (cand scale: {cand_scale:.4f}, job req: {job_req_scale if job_req_scale is not None else 'N/A'})"
+    )
+    print(
+        f"  Seniority penalty (years): -{seniority_penalty:.1f} (cap: -{weights.seniority_max_deduction})"
+    )
     print(f"  Level deduction:  -{level_deduction:.4f}   Tenure deduction: -{tenure_deduction:.4f}")
     print(f"  Combined score:   {combined_100:.2f} (0-100) / {combined_01:.4f} (0-1)")
     print(f"  Matching skills: {matching}")
@@ -423,17 +436,29 @@ def main() -> int:
     rank = 1
     for m in stored:
         if m["airtable_record_id"] == candidate_partition_id:
-            print(f"  Candidate IS in stored matches at rank {m['rank']} (match_score {m['match_score']}).")
+            print(
+                f"  Candidate IS in stored matches at rank {m['rank']} (match_score {m['match_score']})."
+            )
             return 0
         if (m["match_score"] or 0) > their_score:
             rank += 1
     if rank > TOP_N_PER_JOB:
-        print(f"  Candidate is NOT in top {TOP_N_PER_JOB}. Their score {combined_100:.2f} would place them below rank {TOP_N_PER_JOB}.")
+        print(
+            f"  Candidate is NOT in top {TOP_N_PER_JOB}. Their score {combined_100:.2f} would place them below rank {TOP_N_PER_JOB}."
+        )
         print(f"  Stored match rank 1 score: {float(stored[0]['match_score'] or 0) * 100:.2f}")
-        print(f"  Stored match rank {len(stored)} score: {float(stored[-1]['match_score'] or 0) * 100:.2f}")
+        print(
+            f"  Stored match rank {len(stored)} score: {float(stored[-1]['match_score'] or 0) * 100:.2f}"
+        )
     else:
         print(f"  Candidate would be rank ~{rank} (score {combined_100:.2f}).")
-        print(f"  Stored top 3: " + ", ".join(f"#{m['rank']} {m['full_name']} ({float(m['match_score'] or 0)*100:.1f})" for m in stored[:3]))
+        print(
+            "  Stored top 3: "
+            + ", ".join(
+                f"#{m['rank']} {m['full_name']} ({float(m['match_score'] or 0)*100:.1f})"
+                for m in stored[:3]
+            )
+        )
     print("=" * 70)
     return 0
 

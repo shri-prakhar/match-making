@@ -27,7 +27,7 @@ import talent_matching.script_env  # noqa: E402
 
 talent_matching.script_env.apply_local_db()
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 

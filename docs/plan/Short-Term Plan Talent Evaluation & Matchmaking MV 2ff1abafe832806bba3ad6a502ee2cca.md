@@ -156,7 +156,7 @@ flowchart TB
 ### CV Analysis & Scoring (MVP)
 
 > LLM-powered normalization, scoring, and vectorization — straightforward to implement with prompt engineering.
-> 
+>
 
 **Pipeline Overview:**
 
@@ -182,7 +182,7 @@ flowchart LR
 **Step 2: LLM Normalization**
 
 > Convert inconsistent CV formats into a standardized structure.
-> 
+>
 
 **Normalization Prompt Template (Draft):**
 
@@ -224,7 +224,7 @@ CV:
 **Step 3: Dual Storage — Raw Metrics + Vectors**
 
 > **Critical:** Store raw metrics separately from vectors. Vectors are “mushy” — useful for search and similarity, but you can’t filter precisely on them.
-> 
+>
 
 **Why Both Are Needed:**
 
@@ -336,7 +336,7 @@ CV:
 ### Verification (MVP: Human Review)
 
 > Automated verification (scraping GitHub profiles, hackathon pages) is complex and brittle. For MVP, defer verification to humans and focus on making it easy to flag fraudulent candidates. The automatic shortlist will free up enough time
-> 
+>
 
 **Why Defer Automated Verification:**
 
@@ -401,7 +401,7 @@ verified_at: timestamp     # When verified
 ### Scoring Approach
 
 > Hybrid scoring system combining keyword matching with semantic similarity for comprehensive candidate-job fit assessment.
-> 
+>
 
 **Chosen Approach: Keyword Hits + Vector Similarity**
 
@@ -454,7 +454,7 @@ Result: Score from 0-1, where 1 = perfect match
 ### Automation Level
 
 > [TODO: What runs automatically vs requires human review?]
-> 
+>
 
 | Step | Automated? | Human Review? | Notes |
 | --- | --- | --- | --- |
@@ -471,7 +471,7 @@ Result: Score from 0-1, where 1 = perfect match
 ### Job & Company Ingestion Pipeline
 
 > Mirror the candidate pipeline: ingest job descriptions → normalize → extract requirements → store metrics + vectors → enable instant candidate matching.
-> 
+>
 
 **Pipeline Overview:**
 
@@ -514,7 +514,7 @@ flowchart LR
 **Step 1: Job Description Normalization**
 
 > Convert free-form job descriptions into structured requirements.
-> 
+>
 
 **Job Normalization Prompt Template (Draft):**
 
@@ -563,7 +563,7 @@ Job Description:
 **Step 2: Dual Storage for Jobs**
 
 > Same principle as candidates: raw metrics for filtering, vectors for semantic matching.
-> 
+>
 
 **Job Metrics (Queryable):**
 
@@ -587,7 +587,7 @@ Job Description:
 **Step 4: Instant Candidate Matching**
 
 > When a job is ingested, immediately return top matching candidates.
-> 
+>
 
 **Matching Algorithm Overview:**
 
@@ -637,7 +637,7 @@ The matching process combines traditional filtering with semantic vector similar
 ## Trade-offs
 
 > It is enough to cut down the current workload by 80% with 20% of possible effort.
-> 
+>
 - **GitHub scoring is quantity-based, not quality-based** — We count commits/repos/stars but don't analyze code quality. This is fast to implement but may miss high-quality developers with fewer but better contributions. Revisit in Phase 2+ with LLM analysis.
 - **No originality detection** — We can't distinguish copied code from original work. Deferred to long-term LLM-based analysis.
 - **CV scoring trusts claims at face value** — MVP LLM scoring assumes CV content is accurate. No cross-validation with GitHub or verification of claims. Deferred to Phase 2 oversell/undersell detection.
@@ -719,7 +719,7 @@ flowchart TB
 - Reprocessing (re-run from any point without starting over)
 - Auditing (trace how a score was computed)
 - Versioning (compare old vs new transformation logic)
-> 
+>
 
 **Storage Structure:**
 
@@ -740,7 +740,7 @@ flowchart TB
 - Output schema (what it produces)
 - Transformation logic (prompt template OR function)
 - Version (for tracking changes)
-> 
+>
 
 **Transformation Registry:**
 
@@ -756,7 +756,7 @@ flowchart TB
 ### LLM Cost Management
 
 > LLM calls are the primary cost driver. Optimize for cost, not compute.
-> 
+>
 
 **Cost Estimation:**
 
@@ -780,7 +780,7 @@ flowchart TB
 ### MVP Implementation Plan
 
 > Self-hosted stack: Dagster OSS + PostgreSQL with pgvector + Python service
-> 
+>
 
 **Phase 1: Infrastructure Setup (Week 1)**
 

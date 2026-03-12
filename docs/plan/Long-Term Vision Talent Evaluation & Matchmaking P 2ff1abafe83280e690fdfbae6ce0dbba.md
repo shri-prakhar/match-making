@@ -112,7 +112,7 @@ An intelligent talent matching platform that **verifies** candidate claims autom
 **MVP Baseline: Simple Quantitative Metrics**
 
 > Simple, quantitative metrics that can be extracted via GitHub API with minimal complexity.
-> 
+>
 
 **MVP Metrics:**
 
@@ -127,7 +127,7 @@ An intelligent talent matching platform that **verifies** candidate claims autom
 **Relative GitHub Score Formula (MVP):**
 
 > Score candidates relative to the entire applicant pool using percentile rankings.
-> 
+>
 
 ```
 For each candidate:
@@ -214,12 +214,12 @@ flowchart LR
 ### CV Analysis Evolution
 
 > **MVP Baseline:** LLM normalization to JSON, dual storage (metrics + vectors), human verification
-> 
+>
 
 ### Phase 2: Universal Skill Taxonomy Scoring
 
 > **Deferred from MVP:** Move beyond keyword matching to detailed 1-5 skill proficiency scoring.
-> 
+>
 
 **Why Defer to Phase 2:**
 
@@ -327,7 +327,7 @@ LIMIT 50;
 ### Phase 2: Automated Verification + Oversell/Undersell Detection
 
 > Move from human verification to automated scraping and cross-validation.
-> 
+>
 
 **Automated Verification (Replaces Human Review):**
 
@@ -385,7 +385,7 @@ verification_score =
 **Oversell/Undersell Detection (Built on Verification):**
 
 > Compare what candidates claim vs what we can substantiate.
-> 
+>
 
 | Detection Type | Description | Implementation |
 | --- | --- | --- |
@@ -430,12 +430,12 @@ Output:
 **Phase 3: Company & Role Quality Scoring**
 
 > Not all experience is equal — "Senior at unknown startup" ≠ "Senior at Google"
-> 
+>
 
 ### Automated Company Analysis via LLM Scraping
 
 > Instead of building a heavy company database upfront, use LLMs to scrape and analyze companies on-demand as they appear in candidate CVs.
-> 
+>
 
 **How It Works:**
 
@@ -614,12 +614,12 @@ Tier 1 Senior ≈ Tier 2 Senior/Staff ≈ Tier 3 Lead ≈ Tier 4 Principal
 - ⚠️ **Depth** — harder to get nuanced info like internal leveling systems
 
 > **Note:** For very high-frequency companies (e.g., top 50 employers in your ecosystem), you can still manually enrich entries with deeper context if automated scraping proves insufficient.
-> 
+>
 
 ### Alternative Approaches to Company Analysis
 
 > **Note:** The LLM scraping approach above is the recommended starting point, but here are alternative strategies if your needs differ:
-> 
+>
 
 **Option 1: Manual Curation (High Quality, High Effort)**
 
@@ -725,7 +725,7 @@ flowchart TB
 **Enhanced CV Data Model (Phase 2+):**
 
 > **Note:** MVP already implements dual storage (raw metrics + vectors). These are the **additional fields** for future phases.
-> 
+>
 
 ```
 CandidateProfile
@@ -847,7 +847,7 @@ This feedback is used to:
 ## Matchmaking Evolution
 
 > **MVP Baseline:** LLM job normalization, hybrid matching (40% keyword + 60% vector similarity), instant top-50 results
-> 
+>
 
 ### Phase 2: Enriched Job Context
 
@@ -881,7 +881,7 @@ This feedback is used to:
 ### Recommender System Approach
 
 > Transform from query-based matching to a true recommender system.
-> 
+>
 
 **From your notes:**
 - Keep records and improve hit rates as a recommender system
@@ -900,7 +900,7 @@ This feedback is used to:
 ### Scalability Architecture
 
 > [TODO: How does the system handle 10x, 100x growth?]
-> 
+>
 
 **Scaling Challenges:**
 - [ ] [TODO: Challenge 1 and solution]
@@ -919,7 +919,7 @@ This feedback is used to:
 ### Quality Metrics
 
 > [TODO: How do you measure and maintain matching quality at scale?]
-> 
+>
 
 **Key Quality Indicators:**
 
@@ -936,7 +936,7 @@ This feedback is used to:
 ## Platform Integration
 
 > [TODO: How does evaluation/matchmaking fit into a broader workflow?]
-> 
+>
 
 ### Upstream Integrations
 
@@ -957,7 +957,7 @@ This feedback is used to:
 ### Workflow Position
 
 > [TODO: Where does this system sit in the overall talent pipeline?]
-> 
+>
 
 ```
 [TODO: Describe the end-to-end flow]
@@ -972,7 +972,7 @@ Sourcing → Intake → EVALUATION → MATCHING → Interview → Offer → Onbo
 ## Technical Architecture
 
 > [TODO: Customize this diagram to show the long-term system design]
-> 
+>
 
 ```mermaid
 flowchart TB
@@ -1040,7 +1040,7 @@ flowchart TB
 ## Evolution Roadmap
 
 > [TODO: Map out the journey from MVP to full vision]
-> 
+>
 
 ```mermaid
 timeline
@@ -1074,7 +1074,7 @@ timeline
 ## Open Questions
 
 > [TODO: Things to explore, validate, or discuss further]
-> 
+>
 
 ### Technical Questions
 
@@ -1118,7 +1118,7 @@ timeline
 ## Investment Required
 
 > [TODO: What resources are needed to achieve the vision?]
-> 
+>
 
 ### Team
 
@@ -1146,7 +1146,7 @@ timeline
 ## Your Additional Notes
 
 > [TODO: Add any other long-term thoughts or ideas here]
-> 
-- 
-- 
+>
+-
+-
 -

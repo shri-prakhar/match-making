@@ -21,6 +21,7 @@ def sync_airtable_candidates_partitions(context: OpExecutionContext) -> dict:
     context.log.info(f"Existing partitions: {len(existing_partitions)}")
 
     new_record_ids = set(all_record_ids) - existing_partitions
+    removed_record_ids = existing_partitions - set(all_record_ids)
 
     if new_record_ids:
         context.log.info(f"Adding {len(new_record_ids)} new partitions...")
@@ -31,6 +32,18 @@ def sync_airtable_candidates_partitions(context: OpExecutionContext) -> dict:
     else:
         context.log.info("No new partitions to add")
 
+    if removed_record_ids:
+        context.log.info(
+            f"Removing {len(removed_record_ids)} partitions (deleted from Airtable)..."
+        )
+        for key in removed_record_ids:
+            context.instance.delete_dynamic_partition(
+                partitions_def_name=candidate_partitions.name,
+                partition_key=key,
+            )
+    else:
+        context.log.info("No partitions to remove")
+
     context.log.info("")
     context.log.info("Next: Go to Jobs → candidate_pipeline → Backfill to process partitions")
 
@@ -38,6 +51,7 @@ def sync_airtable_candidates_partitions(context: OpExecutionContext) -> dict:
         "total_records": len(all_record_ids),
         "existing_partitions": len(existing_partitions),
         "new_partitions": len(new_record_ids),
+        "removed_partitions": len(removed_record_ids),
     }
 
 
@@ -50,18 +64,38 @@ def sync_airtable_jobs_partitions(context: OpExecutionContext) -> dict:
     context.log.info(f"Found {len(all_record_ids)} job records")
 
     existing = set(context.instance.get_dynamic_partitions(partitions_def_name=job_partitions.name))
+    context.log.info(f"Existing partitions: {len(existing)}")
+
     new_record_ids = set(all_record_ids) - existing
+    removed_record_ids = existing - set(all_record_ids)
+
     if new_record_ids:
+        context.log.info(f"Adding {len(new_record_ids)} new partitions...")
         context.instance.add_dynamic_partitions(
             partitions_def_name=job_partitions.name,
             partition_keys=list(new_record_ids),
         )
-        context.log.info(f"Added {len(new_record_ids)} new job partitions")
+    else:
+        context.log.info("No new partitions to add")
+
+    if removed_record_ids:
+        context.log.info(
+            f"Removing {len(removed_record_ids)} partitions (deleted from Airtable)..."
+        )
+        for key in removed_record_ids:
+            context.instance.delete_dynamic_partition(
+                partitions_def_name=job_partitions.name,
+                partition_key=key,
+            )
+    else:
+        context.log.info("No partitions to remove")
+
     context.log.info("Next: Go to Jobs → job_pipeline → Backfill to process job partitions")
     return {
         "total_records": len(all_record_ids),
         "existing_partitions": len(existing),
         "new_partitions": len(new_record_ids),
+        "removed_partitions": len(removed_record_ids),
     }
 
 

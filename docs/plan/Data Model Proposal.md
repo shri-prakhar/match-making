@@ -1,7 +1,7 @@
 # Data Model Proposal: Talent Evaluation & Matchmaking MVP
 
-> **Version:** 1.1  
-> **Date:** February 2026  
+> **Version:** 1.1
+> **Date:** February 2026
 > **Purpose:** Define the complete data structure for normalized candidates, jobs, and their vector representations
 
 **Related Documents:**
@@ -109,7 +109,7 @@ CREATE TABLE raw_candidates (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source              VARCHAR(50) NOT NULL,           -- 'airtable', 'form', 'referral'
     source_id           VARCHAR(255),                   -- External ID from source system
-    
+
     -- Original fields from input
     full_name           TEXT NOT NULL,
     location_raw        TEXT,
@@ -125,11 +125,11 @@ CREATE TABLE raw_candidates (
     earn_profile_url    TEXT,
     github_url          TEXT,
     work_experience_raw TEXT,
-    
+
     -- Metadata
     ingested_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at          TIMESTAMPTZ DEFAULT NOW(),
-    
+
     -- Processing status
     processing_status   VARCHAR(20) DEFAULT 'pending',  -- pending, processing, completed, failed
     processing_error    TEXT
@@ -144,14 +144,14 @@ The LLM-normalized structured representation (the "Smart Profile"):
 CREATE TABLE normalized_candidates (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_candidate_id        UUID NOT NULL REFERENCES raw_candidates(id),
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- IDENTITY & BASIC INFO
     -- ═══════════════════════════════════════════════════════════════════
     full_name               TEXT NOT NULL,
     email                   TEXT,                           -- Extracted from CV if present
     phone                   TEXT,                           -- Extracted from CV if present
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- LOCATION (normalized)
     -- ═══════════════════════════════════════════════════════════════════
@@ -159,7 +159,7 @@ CREATE TABLE normalized_candidates (
     location_country        TEXT,                           -- e.g., "Portugal", "Malaysia"
     location_region         TEXT,                           -- e.g., "Europe", "Asia-Pacific", "North America"
     timezone                TEXT,                           -- e.g., "UTC+0", "UTC+8"
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- PROFESSIONAL SUMMARY
     -- ═══════════════════════════════════════════════════════════════════
@@ -167,25 +167,25 @@ CREATE TABLE normalized_candidates (
     current_role            TEXT,                           -- e.g., "Senior Full-Stack Developer"
     seniority_level         VARCHAR(20),                    -- 'junior', 'mid', 'senior', 'lead', 'principal', 'executive'
     years_of_experience     INTEGER,                        -- Total years (computed from work history)
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- SKILLS (summary for fast filtering - detail in candidate_skills table)
     -- See: Skills Taxonomy System Proposal for full design
     -- ═══════════════════════════════════════════════════════════════════
     skills_all              TEXT[],                         -- All normalized skill names for filtering
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- DESIRED ROLES
     -- ═══════════════════════════════════════════════════════════════════
     desired_job_categories  TEXT[],                         -- ['Backend Developer', 'Protocol Engineer']
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- COMPENSATION
     -- ═══════════════════════════════════════════════════════════════════
     compensation_min        INTEGER,                        -- In USD
     compensation_max        INTEGER,                        -- In USD
     compensation_currency   VARCHAR(10) DEFAULT 'USD',
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- WORK HISTORY METRICS
     -- Note: Domain experience (Web3, Solana, etc.) is matched via vectors,
@@ -196,14 +196,14 @@ CREATE TABLE normalized_candidates (
     job_switches_count      INTEGER,                        -- Number of company changes
     average_tenure_months   INTEGER,                        -- Average time at each company
     longest_tenure_months   INTEGER,                        -- Longest single tenure
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- EDUCATION
     -- ═══════════════════════════════════════════════════════════════════
     education_highest_degree    TEXT,                       -- e.g., "Master's", "Bachelor's", "PhD"
     education_field             TEXT,                       -- e.g., "Computer Science", "Software Engineering"
     education_institution       TEXT,                       -- e.g., "MIT", "Stanford"
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- ACHIEVEMENTS & RECOGNITION
     -- ═══════════════════════════════════════════════════════════════════
@@ -211,7 +211,7 @@ CREATE TABLE normalized_candidates (
     hackathon_total_prize_usd   INTEGER DEFAULT 0,
     solana_hackathon_wins       INTEGER DEFAULT 0,
     notable_achievements        TEXT[],                     -- Array of achievement descriptions
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- SOCIAL PRESENCE (for BD/Growth roles)
     -- ═══════════════════════════════════════════════════════════════════
@@ -220,7 +220,7 @@ CREATE TABLE normalized_candidates (
     github_handle           TEXT,
     social_followers_total  INTEGER DEFAULT 0,              -- Combined social following
     verified_communities    TEXT[],                         -- ['Superteam', 'Solana Foundation']
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- VERIFICATION & REVIEW
     -- ═══════════════════════════════════════════════════════════════════
@@ -228,7 +228,7 @@ CREATE TABLE normalized_candidates (
     verification_notes      TEXT,
     verified_by             UUID,                           -- Reviewer user ID
     verified_at             TIMESTAMPTZ,
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- PROCESSING METADATA
     -- ═══════════════════════════════════════════════════════════════════
@@ -236,11 +236,11 @@ CREATE TABLE normalized_candidates (
     model_version           VARCHAR(50) NOT NULL,           -- LLM model used (e.g., 'gpt-4-turbo')
     normalized_at           TIMESTAMPTZ DEFAULT NOW(),
     confidence_score        FLOAT,                          -- LLM confidence in extraction (0-1)
-    
+
     -- Full normalized JSON (for debugging/auditing)
     normalized_json         JSONB NOT NULL,
-    
-    CONSTRAINT fk_raw_candidate FOREIGN KEY (raw_candidate_id) 
+
+    CONSTRAINT fk_raw_candidate FOREIGN KEY (raw_candidate_id)
         REFERENCES raw_candidates(id) ON DELETE CASCADE
 );
 
@@ -260,26 +260,26 @@ CREATE TABLE candidate_skills (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id        UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
     skill_id            UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    
+
     -- Rating & Experience
     rating              INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),  -- 1=beginner, 5=expert
     years_experience    INTEGER,                        -- Years using this skill (from CV)
-    
+
     -- Context for vectorization
     notable_achievement TEXT,                           -- Best example of skill usage (for skill_vector)
     skill_vector        VECTOR(1536),                   -- Embedding of achievement
-    
+
     -- Metadata
     rated_at            TIMESTAMPTZ DEFAULT NOW(),
     rating_model        VARCHAR(50),                    -- LLM model used for rating
-    
+
     CONSTRAINT unique_candidate_skill UNIQUE (candidate_id, skill_id)
 );
 
 CREATE INDEX idx_candidate_skills_candidate ON candidate_skills(candidate_id);
 CREATE INDEX idx_candidate_skills_skill ON candidate_skills(skill_id);
 CREATE INDEX idx_candidate_skills_rating ON candidate_skills(rating);
-CREATE INDEX idx_candidate_skill_vec ON candidate_skills 
+CREATE INDEX idx_candidate_skill_vec ON candidate_skills
     USING hnsw (skill_vector vector_cosine_ops);
 ```
 
@@ -291,36 +291,36 @@ Structured work history for each position (used for position vectors):
 CREATE TABLE candidate_experiences (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id        UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- Position details
     company_name        TEXT NOT NULL,
     position_title      TEXT NOT NULL,
-    
+
     -- Duration
     start_date          DATE,
     end_date            DATE,                           -- NULL = current position
     years_experience    FLOAT,                          -- Computed from dates (e.g., 2.5)
     is_current          BOOLEAN DEFAULT FALSE,
-    
+
     -- Description (for vectorization)
     description         TEXT,                           -- Summary of role/responsibilities
-    
+
     -- Skills used in this role (denormalized for context/reference)
     skills_used         TEXT[],                         -- e.g., ['TypeScript', 'React', 'PostgreSQL']
-    
+
     -- Vector for semantic matching
     position_vector     VECTOR(1536),                   -- Embedding of description
-    
+
     -- Ordering
     position_order      INTEGER NOT NULL,               -- 1 = most recent
-    
+
     -- Metadata
     created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_experiences_candidate ON candidate_experiences(candidate_id);
 CREATE INDEX idx_experiences_company ON candidate_experiences(company_name);
-CREATE INDEX idx_position_vec ON candidate_experiences 
+CREATE INDEX idx_position_vec ON candidate_experiences
     USING hnsw (position_vector vector_cosine_ops);
 ```
 
@@ -332,22 +332,22 @@ Basic metrics from GitHub API (quality signals deferred to Phase 2 with LLM-base
 CREATE TABLE candidate_github_metrics (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id            UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- Profile info
     github_username         TEXT NOT NULL,
     github_url              TEXT,
-    
+
     -- Basic metrics
     public_repos            INTEGER DEFAULT 0,
     total_stars             INTEGER DEFAULT 0,
     followers               INTEGER DEFAULT 0,
-    
+
     -- Languages (from repos)
     languages               TEXT[],                     -- Top languages
-    
+
     -- Fetch metadata
     fetched_at              TIMESTAMPTZ DEFAULT NOW(),
-    
+
     CONSTRAINT unique_github_per_candidate UNIQUE (candidate_id)
 );
 
@@ -366,7 +366,7 @@ CREATE TABLE skills (
     name            TEXT NOT NULL UNIQUE,           -- "TypeScript"
     slug            TEXT NOT NULL UNIQUE,           -- "typescript"
     description     TEXT,                           -- "Typed superset of JavaScript"
-    
+
     -- Metadata
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     created_by      VARCHAR(50) DEFAULT 'seed',     -- 'seed', 'llm', 'manual'
@@ -383,11 +383,11 @@ CREATE TABLE skill_aliases (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     alias           TEXT NOT NULL,                  -- "TS", "Typescript", "typescript"
     skill_id        UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    
+
     -- Metadata
     added_at        TIMESTAMPTZ DEFAULT NOW(),
     added_by        VARCHAR(50) DEFAULT 'manual',   -- 'seed', 'llm', 'manual'
-    
+
     CONSTRAINT unique_alias UNIQUE (alias)
 );
 
@@ -402,37 +402,37 @@ Individual projects, hackathons, and side projects (separate from employment his
 CREATE TABLE candidate_projects (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id        UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- Project details
     project_name        TEXT NOT NULL,
     description         TEXT,                           -- Summary for AI matching
     url                 TEXT,                           -- Link to project/repo
     technologies        TEXT[],                         -- Technologies used
-    
+
     -- Hackathon-specific fields
     is_hackathon        BOOLEAN DEFAULT FALSE,
     hackathon_name      TEXT,                           -- e.g., "Solana Grizzlython"
     prize_won           TEXT,                           -- e.g., "1st Place", "Best DeFi"
     prize_amount_usd    INTEGER,
-    
+
     -- Timeline
     year                INTEGER,                        -- Year of project
     start_date          DATE,
     end_date            DATE,
-    
+
     -- Ordering
     project_order       INTEGER DEFAULT 1,              -- 1 = most important/recent
-    
+
     -- Vector for semantic matching (Phase 2)
     project_vector      VECTOR(1536),                   -- Embedding of description
-    
+
     -- Metadata
     created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_projects_candidate ON candidate_projects(candidate_id);
 CREATE INDEX idx_projects_hackathon ON candidate_projects(is_hackathon);
-CREATE INDEX idx_project_vec ON candidate_projects 
+CREATE INDEX idx_project_vec ON candidate_projects
     USING hnsw (project_vector vector_cosine_ops);
 ```
 
@@ -458,18 +458,18 @@ Score each candidate's fitness for their desired roles:
 CREATE TABLE candidate_role_fitness (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id    UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- Role
     role_name       TEXT NOT NULL,                  -- "Backend Developer", "Protocol Engineer"
-    
+
     -- Score
     fitness_score   FLOAT NOT NULL,                 -- 0.0 - 1.0
     score_breakdown JSONB,                          -- {"core_skills": {...}, "bonus_skills": {...}}
-    
+
     -- Metadata
     computed_at     TIMESTAMPTZ DEFAULT NOW(),
     algorithm_version VARCHAR(50),
-    
+
     CONSTRAINT unique_candidate_role UNIQUE (candidate_id, role_name)
 );
 
@@ -485,43 +485,43 @@ LLM-scored universal attributes that apply across all job types. These replace j
 CREATE TABLE candidate_attributes (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id            UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- UNIVERSAL SOFT SCORES (1-5, LLM-rated from CV)
     -- ═══════════════════════════════════════════════════════════════════
-    
+
     -- Leadership: Has led teams/projects, made key decisions
     -- 1=IC only, 3=led small projects, 5=led teams/orgs
     leadership_score        INTEGER CHECK (leadership_score BETWEEN 1 AND 5),
-    
+
     -- Autonomy: Works independently, self-directed
     -- 1=needs guidance, 3=independent on tasks, 5=founder-type self-starter
     autonomy_score          INTEGER CHECK (autonomy_score BETWEEN 1 AND 5),
-    
+
     -- Technical Depth: Systems thinking, architecture skills
     -- 1=surface-level, 3=solid practitioner, 5=architect/systems thinker
     technical_depth_score   INTEGER CHECK (technical_depth_score BETWEEN 1 AND 5),
-    
+
     -- Communication: Collaboration, documentation, public presence
     -- 1=minimal evidence, 3=collaborates well, 5=excellent writer/speaker
     communication_score     INTEGER CHECK (communication_score BETWEEN 1 AND 5),
-    
+
     -- Growth Trajectory: Career progression, learning velocity
     -- 1=static career, 3=steady growth, 5=rapid advancement
     growth_trajectory_score INTEGER CHECK (growth_trajectory_score BETWEEN 1 AND 5),
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- REASONING (for transparency/debugging)
     -- ═══════════════════════════════════════════════════════════════════
     reasoning               JSONB,                  -- LLM reasoning for each score
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- METADATA
     -- ═══════════════════════════════════════════════════════════════════
     rated_at                TIMESTAMPTZ DEFAULT NOW(),
     rating_model            VARCHAR(50),            -- LLM model used
     prompt_version          VARCHAR(50),
-    
+
     CONSTRAINT unique_attributes_per_candidate UNIQUE (candidate_id)
 );
 
@@ -554,7 +554,7 @@ CREATE TABLE raw_jobs (
     source              VARCHAR(50) NOT NULL,           -- 'manual', 'api', 'partner', 'paste'
     source_id           VARCHAR(255),
     source_url          TEXT,
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- CORE FIELDS
     -- For unstructured input: only job_description is required
@@ -564,7 +564,7 @@ CREATE TABLE raw_jobs (
     company_name        TEXT,
     job_description     TEXT NOT NULL,                  -- Raw job posting text (always required)
     company_website_url TEXT,                           -- Company website for additional context
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- STRUCTURED FIELDS (from Notion Job Board, optional)
     -- ═══════════════════════════════════════════════════════════════════
@@ -573,7 +573,7 @@ CREATE TABLE raw_jobs (
     work_setup_raw      TEXT,                           -- "Remote", "Hybrid", "On-Site"
     status_raw          TEXT,                           -- "Active", "Closed"
     job_category_raw    TEXT,                           -- "Frontend Engineer", etc.
-    
+
     -- Metadata
     ingested_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at          TIMESTAMPTZ DEFAULT NOW(),
@@ -597,21 +597,21 @@ CREATE TABLE raw_jobs (
 CREATE TABLE normalized_jobs (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_job_id              UUID NOT NULL REFERENCES raw_jobs(id),
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- BASIC INFO
     -- ═══════════════════════════════════════════════════════════════════
     title                   TEXT NOT NULL,
     company_name            TEXT,
     company_stage           VARCHAR(30),                -- 'startup', 'scaleup', 'enterprise', 'dao'
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- ROLE CLASSIFICATION
     -- ═══════════════════════════════════════════════════════════════════
     seniority_level         VARCHAR(20),                -- 'junior', 'mid', 'senior', 'lead', 'principal'
     employment_type         VARCHAR(20),                -- 'full-time', 'part-time', 'contract'
     role_type               VARCHAR(30),                -- 'engineering', 'devrel', 'growth', 'product', 'design'
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- REQUIREMENTS
     -- ═══════════════════════════════════════════════════════════════════
@@ -622,14 +622,14 @@ CREATE TABLE normalized_jobs (
     education_required      TEXT,                       -- e.g., "Bachelor's in CS or equivalent"
     domain_experience       TEXT[],                     -- e.g., ['DeFi', 'Trading', 'Infrastructure']
     tech_stack              TEXT[],                     -- Specific technologies
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- ROLE DESCRIPTION
     -- ═══════════════════════════════════════════════════════════════════
     role_summary            TEXT,                       -- 2-3 sentence summary
     responsibilities        TEXT[],                     -- Key responsibilities
     team_context            TEXT,                       -- Team size, reporting structure
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- COMPENSATION
     -- ═══════════════════════════════════════════════════════════════════
@@ -638,14 +638,14 @@ CREATE TABLE normalized_jobs (
     salary_currency         VARCHAR(10) DEFAULT 'USD',
     has_equity              BOOLEAN DEFAULT FALSE,
     has_token_compensation  BOOLEAN DEFAULT FALSE,
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- LOCATION
     -- ═══════════════════════════════════════════════════════════════════
     location_type           VARCHAR(20),                -- 'remote', 'hybrid', 'onsite'
     location_countries      TEXT[],                     -- Allowed countries
     timezone_requirements   TEXT,                       -- e.g., "UTC-5 to UTC+3"
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- SOFT ATTRIBUTE REQUIREMENTS (minimum scores, NULL = not required)
     -- LLM-inferred from job description signals
@@ -655,13 +655,13 @@ CREATE TABLE normalized_jobs (
     min_technical_depth_score   INTEGER CHECK (min_technical_depth_score BETWEEN 1 AND 5),
     min_communication_score     INTEGER CHECK (min_communication_score BETWEEN 1 AND 5),
     min_growth_trajectory_score INTEGER CHECK (min_growth_trajectory_score BETWEEN 1 AND 5),
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- STATUS
     -- ═══════════════════════════════════════════════════════════════════
     status                  VARCHAR(20) DEFAULT 'active', -- 'active', 'paused', 'filled', 'closed'
     priority                INTEGER DEFAULT 3,          -- 1=urgent, 2=high, 3=normal, 4=low
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- PROCESSING METADATA
     -- ═══════════════════════════════════════════════════════════════════
@@ -669,8 +669,8 @@ CREATE TABLE normalized_jobs (
     model_version           VARCHAR(50) NOT NULL,
     normalized_at           TIMESTAMPTZ DEFAULT NOW(),
     normalized_json         JSONB NOT NULL,
-    
-    CONSTRAINT fk_raw_job FOREIGN KEY (raw_job_id) 
+
+    CONSTRAINT fk_raw_job FOREIGN KEY (raw_job_id)
         REFERENCES raw_jobs(id) ON DELETE CASCADE
 );
 
@@ -692,52 +692,52 @@ Semantic embeddings for candidate matching:
 CREATE TABLE candidate_vectors (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     candidate_id            UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- CORE VECTORS (Phase 1 MVP)
     -- ═══════════════════════════════════════════════════════════════════
-    
+
     -- Overall experience vector (all roles concatenated)
     experience_vector       VECTOR(1536),               -- "Who has similar overall work history?"
-    
+
     -- Domain/industry context
     domain_context_vector   VECTOR(1536),               -- "Who has worked in similar problem spaces?"
-    
+
     -- Personality/work style
     personality_vector      VECTOR(1536),               -- "Who would be a good culture fit?"
-    
+
     -- Impact/ownership signals
     project_impact_vector   VECTOR(1536),               -- "Who has owned significant scope?"
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- ROLE-SPECIFIC VECTORS (Phase 1 MVP)
     -- ═══════════════════════════════════════════════════════════════════
-    
+
     -- Technical depth (for engineering roles)
     technical_depth_vector  VECTOR(1536),               -- "Who thinks in systems, not just features?"
-    
+
     -- Social presence (for BD/Growth roles)
     social_presence_vector  VECTOR(1536),               -- "Who has relevant social proof?"
-    
+
     -- Community involvement
     community_narrative_vector VECTOR(1536),            -- "Who is well-connected in DeFi communities?"
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- METADATA
     -- ═══════════════════════════════════════════════════════════════════
     embedding_model         VARCHAR(50) NOT NULL,       -- e.g., 'text-embedding-3-large'
     model_version           VARCHAR(50) NOT NULL,
     created_at              TIMESTAMPTZ DEFAULT NOW(),
-    
+
     CONSTRAINT unique_vectors_per_candidate UNIQUE (candidate_id)
 );
 
 -- HNSW indexes for fast similarity search
-CREATE INDEX idx_candidate_experience_vec ON candidate_vectors 
+CREATE INDEX idx_candidate_experience_vec ON candidate_vectors
     USING hnsw (experience_vector vector_cosine_ops);
-CREATE INDEX idx_candidate_domain_vec ON candidate_vectors 
+CREATE INDEX idx_candidate_domain_vec ON candidate_vectors
     USING hnsw (domain_context_vector vector_cosine_ops);
-CREATE INDEX idx_candidate_personality_vec ON candidate_vectors 
+CREATE INDEX idx_candidate_personality_vec ON candidate_vectors
     USING hnsw (personality_vector vector_cosine_ops);
 ```
 
@@ -757,25 +757,25 @@ Position vectors are stored **directly in the `candidate_experiences` table** (s
 CREATE TABLE job_vectors (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id                  UUID NOT NULL REFERENCES normalized_jobs(id) ON DELETE CASCADE,
-    
+
     -- Core job vectors
     role_description_vector VECTOR(1536),               -- Match against candidate positions/experience
     domain_context_vector   VECTOR(1536),               -- Match against candidate domain expertise
     culture_vector          VECTOR(1536),               -- Match against candidate personality
-    
+
     -- Metadata
     embedding_model         VARCHAR(50) NOT NULL,
     model_version           VARCHAR(50) NOT NULL,
     created_at              TIMESTAMPTZ DEFAULT NOW(),
-    
+
     CONSTRAINT unique_vectors_per_job UNIQUE (job_id)
 );
 
-CREATE INDEX idx_job_role_vec ON job_vectors 
+CREATE INDEX idx_job_role_vec ON job_vectors
     USING hnsw (role_description_vector vector_cosine_ops);
-CREATE INDEX idx_job_domain_vec ON job_vectors 
+CREATE INDEX idx_job_domain_vec ON job_vectors
     USING hnsw (domain_context_vector vector_cosine_ops);
-CREATE INDEX idx_job_culture_vec ON job_vectors 
+CREATE INDEX idx_job_culture_vec ON job_vectors
     USING hnsw (culture_vector vector_cosine_ops);
 ```
 
@@ -792,18 +792,18 @@ CREATE TABLE matches (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id                  UUID NOT NULL REFERENCES normalized_jobs(id) ON DELETE CASCADE,
     candidate_id            UUID NOT NULL REFERENCES normalized_candidates(id) ON DELETE CASCADE,
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- SCORES
     -- ═══════════════════════════════════════════════════════════════════
-    
+
     -- Final combined score (0-1)
     match_score             FLOAT NOT NULL,
-    
+
     -- Score components
     keyword_score           FLOAT,                      -- Keyword matching component (0-1)
     vector_score            FLOAT,                      -- Vector similarity component (0-1)
-    
+
     -- Detailed breakdown
     score_breakdown         JSONB,                      -- Full breakdown for explainability
     /*
@@ -823,24 +823,24 @@ CREATE TABLE matches (
         }
     }
     */
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- STATUS
     -- ═══════════════════════════════════════════════════════════════════
     rank                    INTEGER,                    -- Position in shortlist (1 = best)
     status                  VARCHAR(20) DEFAULT 'matched', -- matched, reviewed, contacted, rejected, hired
-    
+
     -- Review tracking
     reviewed_by             UUID,
     reviewed_at             TIMESTAMPTZ,
     review_notes            TEXT,
-    
+
     -- ═══════════════════════════════════════════════════════════════════
     -- METADATA
     -- ═══════════════════════════════════════════════════════════════════
     algorithm_version       VARCHAR(50) NOT NULL,       -- Version of matching algorithm
     created_at              TIMESTAMPTZ DEFAULT NOW(),
-    
+
     CONSTRAINT unique_job_candidate_match UNIQUE (job_id, candidate_id)
 );
 
@@ -857,34 +857,34 @@ Track all transformations for debugging and reprocessing:
 ```sql
 CREATE TABLE processing_log (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
+
     -- What was processed
     entity_type         VARCHAR(20) NOT NULL,           -- 'candidate', 'job', 'match'
     entity_id           UUID NOT NULL,
-    
+
     -- Processing step
     step_name           VARCHAR(50) NOT NULL,           -- 'ingest', 'normalize', 'vectorize', 'match'
     step_status         VARCHAR(20) NOT NULL,           -- 'started', 'completed', 'failed'
-    
+
     -- Versioning
     prompt_version      VARCHAR(50),
     model_version       VARCHAR(50),
     algorithm_version   VARCHAR(50),
-    
+
     -- Timing
     started_at          TIMESTAMPTZ NOT NULL,
     completed_at        TIMESTAMPTZ,
     duration_ms         INTEGER,
-    
+
     -- Cost tracking
     tokens_input        INTEGER,
     tokens_output       INTEGER,
     estimated_cost_usd  FLOAT,
-    
+
     -- Errors
     error_message       TEXT,
     error_details       JSONB,
-    
+
     -- Output reference
     output_data         JSONB                           -- Optional: store intermediate output
 );
@@ -969,24 +969,24 @@ Common mappings needed:
   "current_role": "Senior Software Developer",
   "seniority_level": "senior",
   "years_of_experience": 5,
-  
+
   "location": {
     "city": "Kuala Lumpur",
-    "country": "Malaysia", 
+    "country": "Malaysia",
     "region": "Asia-Pacific",
     "timezone": "UTC+8"
   },
-  
+
   "skills_all": ["TypeScript", "JavaScript", "Rust", "React", "Next.js", "Node.js", "Solana", "DeFi"],
-  
+
   "desired_job_categories": ["Full-Stack Developer", "Frontend Developer"],
-  
+
   "compensation": {
     "min": 91000,
     "max": 125000,
     "currency": "USD"
   },
-  
+
   "companies": ["Blinq", "Router Protocol"]
 }
 ```
@@ -1044,7 +1044,7 @@ Common mappings needed:
     },
     {
       "company_name": "Router Protocol",
-      "position_title": "Senior Software Developer", 
+      "position_title": "Senior Software Developer",
       "years_experience": 4.25,
       "is_current": false,
       "description": "Cross-chain bridge and DeFi infrastructure. Built explorer indexing 50+ chains, DEX UI supporting 3K+ daily users, staking platform with $5M+ TVL."
@@ -1141,18 +1141,18 @@ Common mappings needed:
   "title": "Senior Frontend Engineer",
   "company_name": "Trojan Trading",
   "seniority_level": "senior",
-  
+
   "must_have_skills": ["React", "Next.js", "TypeScript", "WebSocket"],
   "nice_to_have_skills": ["Solana", "DeFi", "CI/CD"],
   "years_experience_min": 5,
   "domain_experience": ["Trading Platforms", "DeFi", "Crypto"],
-  
+
   "min_leadership_score": 4,
   "min_autonomy_score": 4,
   "min_technical_depth_score": 4,
   "min_communication_score": 3,
   "min_growth_trajectory_score": null,
-  
+
   "salary_min": 100000,
   "salary_max": 350000,
   "location_type": "remote"

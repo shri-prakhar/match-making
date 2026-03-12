@@ -24,7 +24,7 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.script_env import apply_local_db
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 
 def get_connection():
@@ -77,18 +77,24 @@ def run(report_path: str, output_path: str | None) -> str:
         job_at_id = j.get("job_airtable_record_id") or ""
         missing = j.get("missing_candidates", [])
         job_cat_candidates = [
-            m for m in missing
-            if (m.get("exclusion_reason") == "job_category" and m.get("candidate_airtable_record_id"))
+            m
+            for m in missing
+            if (
+                m.get("exclusion_reason") == "job_category"
+                and m.get("candidate_airtable_record_id")
+            )
         ]
         for c in job_cat_candidates:
             job_category_candidate_ids.append(c["candidate_airtable_record_id"])
-        job_entries.append({
-            "job_airtable_record_id": job_at_id,
-            "job_title": job_title,
-            "company": company,
-            "job_category": job_category,
-            "job_category_candidates": job_cat_candidates,
-        })
+        job_entries.append(
+            {
+                "job_airtable_record_id": job_at_id,
+                "job_title": job_title,
+                "company": company,
+                "job_category": job_category,
+                "job_category_candidates": job_cat_candidates,
+            }
+        )
 
     conn = get_connection()
     # desired_job_categories can be stored as list or array; ensure we have unique ids for query
@@ -99,7 +105,9 @@ def run(report_path: str, output_path: str | None) -> str:
     lines: list[str] = []
     lines.append("# Job category filter breakdown: jobs and human picks")
     lines.append("")
-    lines.append("For each job (with its **job category**), every human-selected candidate who was excluded because of the job_category filter is listed with their **desired job categories** from the candidate profile. The pipeline only scores candidates whose `desired_job_categories` contain the job’s `job_category` (case-insensitive).")
+    lines.append(
+        "For each job (with its **job category**), every human-selected candidate who was excluded because of the job_category filter is listed with their **desired job categories** from the candidate profile. The pipeline only scores candidates whose `desired_job_categories` contain the job’s `job_category` (case-insensitive)."
+    )
     lines.append("")
 
     for entry in job_entries:
@@ -116,8 +124,12 @@ def run(report_path: str, output_path: str | None) -> str:
         lines.append(f"- **Job ATS record id:** `{job_at_id}`")
         lines.append(f"- **Human picks excluded by job_category:** {len(candidates)}")
         lines.append("")
-        lines.append("| Candidate (name) | Candidate Airtable ID | Desired job categories | Match? |")
-        lines.append("|------------------|------------------------|------------------------|--------|")
+        lines.append(
+            "| Candidate (name) | Candidate Airtable ID | Desired job categories | Match? |"
+        )
+        lines.append(
+            "|------------------|------------------------|------------------------|--------|"
+        )
 
         for c in candidates:
             cand_at_id = c["candidate_airtable_record_id"]
@@ -131,7 +143,11 @@ def run(report_path: str, output_path: str | None) -> str:
             desired_str = desired_str[:80] + ("…" if len(desired_str) > 80 else "")
             job_cat_lower = job_category.lower()
             desired_lower = [str(x).lower() for x in desired] if desired else []
-            match = "Yes" if job_cat_lower in desired_lower or any(job_cat_lower in d for d in desired_lower) else "No"
+            match = (
+                "Yes"
+                if job_cat_lower in desired_lower or any(job_cat_lower in d for d in desired_lower)
+                else "No"
+            )
             lines.append(f"| {name} | `{cand_at_id}` | {desired_str} | {match} |")
 
         lines.append("")

@@ -12,12 +12,12 @@ Usage:
 """
 
 import os
-
-from talent_matching.script_env import apply_local_db
 import subprocess
 import sys
 
 import httpx
+
+from talent_matching.script_env import apply_local_db
 
 ATS_MATCHMAKING_DONE_STATUS = "Matchmaking Done"
 ATS_TABLE_ID = os.getenv("AIRTABLE_ATS_TABLE_ID", "tblrbhITEIBOxwcQV")

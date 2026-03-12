@@ -1,7 +1,5 @@
 """Tests for run failure sensor classification."""
 
-import pytest
-
 from talent_matching.sensors.run_failure_sensor import _classify_failure
 
 
@@ -15,5 +13,7 @@ def test_classify_insufficient_narrative_data():
     assert "INSUFFICIENT_NARRATIVE_DATA" in tags
 
     # Exception type in traceback also matches
-    tags2 = _classify_failure("InsufficientNarrativeDataError: candidate_vectors record_id=recX: ...")
+    tags2 = _classify_failure(
+        "InsufficientNarrativeDataError: candidate_vectors record_id=recX: ..."
+    )
     assert "INSUFFICIENT_NARRATIVE_DATA" in tags2

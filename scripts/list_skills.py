@@ -18,8 +18,8 @@ from psycopg2.extras import RealDictCursor
 load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.script_env import apply_local_db
-from scripts.inspect_utils import get_connection
+from scripts.inspect_utils import get_connection  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 
 def main() -> None:

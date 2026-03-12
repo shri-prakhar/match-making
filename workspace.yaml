@@ -1,0 +1,6 @@
+# Default workspace when running dagster dev from project root.
+# Uses location_name: talent_matching to match remote-ui and run launcher.
+load_from:
+  - python_module:
+      module_name: talent_matching.definitions
+      location_name: talent_matching

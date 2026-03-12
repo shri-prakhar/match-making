@@ -88,4 +88,5 @@ export POSTGRES_HOST=localhost
 export POSTGRES_PORT="$LOCAL_PG_PORT"
 export DAGSTER_HOME="${DAGSTER_HOME:-$PROJECT_ROOT}"
 
-poetry run dagster dev -m talent_matching.definitions
+# Use workspace with location_name: talent_matching so runs match remote-ui/daemon
+poetry run dagster dev -w "$PROJECT_ROOT/docker/workspace-local-dev.yaml"

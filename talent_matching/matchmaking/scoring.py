@@ -12,12 +12,31 @@ import numpy as np
 
 from talent_matching.skills.resolver import skill_vector_key
 
-# Combined score = weighted blend (35% vector, 40% skill fit, 10% comp, 15% location) − seniority deduction
+# Combined score = weighted blend − seniority deductions
 SENIORITY_PENALTY_PER_YEAR = 2
 SENIORITY_PENALTY_PER_SKILL_YEAR = 1
 SENIORITY_PENALTY_CAP = 10
 SENIORITY_MAX_DEDUCTION = 0.2
 SEMANTIC_PARTIAL_CREDIT_CAP = 0.5
+
+# Seniority level order (JUNIOR … EXECUTIVE) for ordinal comparison
+SENIORITY_ORDER: dict[str, int] = {
+    "junior": 0,
+    "mid": 1,
+    "senior": 2,
+    "staff": 3,
+    "lead": 4,
+    "principal": 5,
+    "executive": 6,
+}
+
+# High-stakes job levels: tenure instability and probation rules apply only for these
+HIGH_STAKES_SENIORITY_LEVELS: frozenset[str] = frozenset(
+    {"senior", "staff", "lead", "principal", "executive"}
+)
+
+# Tenure instability: linear scale 0 months → penalty 1, MIN_AVG_TENURE_MONTHS_STABLE → 0
+MIN_AVG_TENURE_MONTHS_STABLE = 18
 
 
 def cosine_similarity_batch(query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
@@ -302,3 +321,126 @@ def seniority_penalty_and_experience_score(
     max_penalty = SENIORITY_PENALTY_CAP + 5 * SENIORITY_PENALTY_PER_SKILL_YEAR
     experience_match_score = max(0.0, 1.0 - penalty / max_penalty) if max_penalty else 1.0
     return penalty, experience_match_score
+
+
+def seniority_level_ordinal(level: str | None) -> int | None:
+    """Return ordinal for seniority level (0=JUNIOR … 6=EXECUTIVE), or None if unknown."""
+    if level is None or not (s := (level or "").strip().lower()):
+        return None
+    return SENIORITY_ORDER.get(s)
+
+
+def seniority_level_penalty(
+    job_level: str | None,
+    cand_level: str | None,
+    max_deduction: float,
+) -> float:
+    """Return deduction in [0, max_deduction] when candidate is below job level. 0 when cand >= job or unknown."""
+    job_ord = seniority_level_ordinal(job_level)
+    cand_ord = seniority_level_ordinal(cand_level)
+    if job_ord is None or cand_ord is None:
+        return 0.0
+    if cand_ord >= job_ord:
+        return 0.0
+    steps = job_ord - cand_ord
+    # Roughly 0.05 per step, capped at max_deduction
+    deduction_per_step = 0.05
+    return min(max_deduction, steps * deduction_per_step)
+
+
+# Base values for seniority scale (0-1) by level; years and soft scores nudge within band
+_SENIORITY_LEVEL_BASE: dict[str, float] = {
+    "junior": 0.15,
+    "mid": 0.35,
+    "senior": 0.55,
+    "staff": 0.70,
+    "lead": 0.80,
+    "principal": 0.90,
+    "executive": 1.0,
+}
+
+
+def candidate_seniority_scale(candidate: dict[str, Any]) -> float:
+    """Single numeric scale 0-1 for how senior the candidate is.
+
+    Combines seniority_level base, years_of_experience (capped at 15y), and
+    optional leadership_score / technical_depth_score (1-5 -> 0-1 nudge).
+    """
+    level = (candidate.get("seniority_level") or "").strip().lower()
+    base = _SENIORITY_LEVEL_BASE.get(level, 0.35)
+
+    years = candidate.get("years_of_experience")
+    if years is not None:
+        if isinstance(years, str) and years.isdigit():
+            years = int(years)
+        if isinstance(years, int | float):
+            years_norm = min(1.0, float(years) / 15.0)
+            base = 0.6 * base + 0.4 * years_norm
+
+    lead = candidate.get("leadership_score")
+    tech = candidate.get("technical_depth_score")
+    if lead is not None and isinstance(lead, int | float) and 1 <= lead <= 5:
+        base = min(1.0, base + 0.02 * (lead - 3))
+    if tech is not None and isinstance(tech, int | float) and 1 <= tech <= 5:
+        base = min(1.0, base + 0.02 * (tech - 3))
+
+    return max(0.0, min(1.0, base))
+
+
+def job_required_seniority_scale(job: dict[str, Any]) -> float | None:
+    """Required minimum seniority scale 0-1 for the job, or None if not specified."""
+    level = (job.get("seniority_level") or "").strip().lower()
+    if not level:
+        return None
+    base = _SENIORITY_LEVEL_BASE.get(level)
+    if base is None:
+        return None
+    min_years = job.get("min_years_experience")
+    if min_years is not None and isinstance(min_years, int | float):
+        years_norm = min(1.0, float(min_years) / 15.0)
+        base = 0.6 * base + 0.4 * years_norm
+    return max(0.0, min(1.0, base))
+
+
+def seniority_scale_fit(
+    candidate_scale: float,
+    job_required_scale: float | None,
+) -> float:
+    """0-1 fit: 1.0 when candidate >= job required or job has no requirement; else decreasing in gap."""
+    if job_required_scale is None:
+        return 1.0
+    if candidate_scale >= job_required_scale:
+        return 1.0
+    gap = job_required_scale - candidate_scale
+    return max(0.0, 1.0 - gap)
+
+
+def tenure_instability_penalty(
+    candidate: dict[str, Any],
+    job_is_high_stakes: bool,
+) -> float:
+    """Return deduction in [0, 1] for tenure instability. Only applied when job is high-stakes (senior+).
+
+    Linear in average tenure: 0 months → penalty 1, 18 months → penalty 0.
+    Above 18 months or missing avg_tenure: 0. Caller caps with tenure_instability_max_deduction.
+    """
+    if not job_is_high_stakes:
+        return 0.0
+
+    avg_tenure = candidate.get("average_tenure_months")
+    if avg_tenure is None:
+        return 0.0
+    if not isinstance(avg_tenure, int | float):
+        avg_tenure = int(avg_tenure) if avg_tenure else None
+    if avg_tenure is None or avg_tenure >= MIN_AVG_TENURE_MONTHS_STABLE:
+        return 0.0
+
+    # Linear: 0 months → 1, 18 months → 0
+    ratio = min(1.0, float(avg_tenure) / MIN_AVG_TENURE_MONTHS_STABLE)
+    return 1.0 - ratio
+
+
+def job_is_high_stakes(job: dict[str, Any]) -> bool:
+    """True if job seniority_level is SENIOR, STAFF, LEAD, PRINCIPAL, or EXECUTIVE."""
+    level = (job.get("seniority_level") or "").strip().lower()
+    return level in HIGH_STAKES_SENIORITY_LEVELS

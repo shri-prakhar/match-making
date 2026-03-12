@@ -23,13 +23,13 @@ from dagster import sensor, RunRequest, SensorEvaluationContext
 @sensor(job=candidate_processing_job)
 def new_candidate_sensor(context: SensorEvaluationContext):
     """Poll database for new candidates every 30 seconds."""
-    
+
     # Get cursor (last processed timestamp)
     last_processed = context.cursor or "1970-01-01T00:00:00"
-    
+
     # Query for new records
     new_candidates = fetch_new_candidates_since(last_processed)
-    
+
     for candidate in new_candidates:
         yield RunRequest(
             run_key=f"candidate-{candidate['id']}",
@@ -41,7 +41,7 @@ def new_candidate_sensor(context: SensorEvaluationContext):
                 }
             },
         )
-    
+
     # Update cursor for next evaluation
     if new_candidates:
         context.update_cursor(new_candidates[-1]["created_at"])
@@ -53,18 +53,18 @@ def new_candidate_sensor(context: SensorEvaluationContext):
 @sensor(job=partitioned_candidate_job)
 def new_candidate_partition_sensor(context: SensorEvaluationContext):
     """Add new partition keys and trigger runs."""
-    
+
     new_candidates = fetch_unprocessed_candidates()
-    
+
     for candidate in new_candidates:
         candidate_id = candidate["id"]
-        
+
         # Register new partition key
         context.instance.add_dynamic_partitions(
             partitions_def_name="candidates",
             partition_keys=[candidate_id],
         )
-        
+
         # Trigger run for this partition
         yield RunRequest(
             run_key=f"candidate-{candidate_id}",
@@ -80,10 +80,10 @@ from pathlib import Path
 @sensor(job=cv_processing_job)
 def new_cv_file_sensor(context: SensorEvaluationContext):
     """Watch directory for new CV files."""
-    
+
     cv_dir = Path("/data/incoming_cvs")
     processed = set((context.cursor or "").split(","))
-    
+
     for cv_file in cv_dir.glob("*.pdf"):
         if cv_file.name not in processed:
             yield RunRequest(
@@ -91,7 +91,7 @@ def new_cv_file_sensor(context: SensorEvaluationContext):
                 run_config={"ops": {"parse_cv": {"config": {"path": str(cv_file)}}}},
             )
             processed.add(cv_file.name)
-    
+
     context.update_cursor(",".join(processed))
 ```
 

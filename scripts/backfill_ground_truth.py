@@ -23,10 +23,10 @@ load_dotenv()
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.db import get_session  # noqa: E402
 from talent_matching.models.ground_truth import GroundTruthOutcome  # noqa: E402
 from talent_matching.resources.airtable import AirtableATSResource  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 
 def _extract_linked_ids(fields: dict, column: str) -> list[str]:

@@ -49,9 +49,7 @@ def candidate_twitter_metrics(
     Rate Limits:
     - Basic tier: 300 requests per 15-minute window
     """
-    context.log.info(
-        f"Fetching Twitter metrics for {len(normalized_candidates)} candidates"
-    )
+    context.log.info(f"Fetching Twitter metrics for {len(normalized_candidates)} candidates")
 
     metrics = []
     fetched_count = 0
@@ -73,21 +71,22 @@ def candidate_twitter_metrics(
         # Check for errors
         if twitter_data.get("_meta", {}).get("error"):
             context.log.warning(
-                f"Failed to fetch Twitter metrics for {x_handle}: "
-                f"{twitter_data['_meta']['error']}"
+                f"Failed to fetch Twitter metrics for {x_handle}: {twitter_data['_meta']['error']}"
             )
             continue
 
-        metrics.append({
-            "candidate_id": candidate_id,
-            "twitter_username": twitter_data["username"],
-            "twitter_url": twitter_data["twitter_url"],
-            "followers_count": twitter_data["followers_count"],
-            "following_count": twitter_data["following_count"],
-            "tweet_count": twitter_data["tweet_count"],
-            "listed_count": twitter_data["listed_count"],
-            "_meta": twitter_data.get("_meta", {}),
-        })
+        metrics.append(
+            {
+                "candidate_id": candidate_id,
+                "twitter_username": twitter_data["username"],
+                "twitter_url": twitter_data["twitter_url"],
+                "followers_count": twitter_data["followers_count"],
+                "following_count": twitter_data["following_count"],
+                "tweet_count": twitter_data["tweet_count"],
+                "listed_count": twitter_data["listed_count"],
+                "_meta": twitter_data.get("_meta", {}),
+            }
+        )
         fetched_count += 1
 
     context.log.info(
@@ -128,9 +127,7 @@ def candidate_linkedin_metrics(
     - connections_count: Approximate connection count
     - headline: Professional headline
     """
-    context.log.info(
-        f"Fetching LinkedIn metrics for {len(normalized_candidates)} candidates"
-    )
+    context.log.info(f"Fetching LinkedIn metrics for {len(normalized_candidates)} candidates")
 
     metrics = []
     fetched_count = 0
@@ -162,16 +159,18 @@ def candidate_linkedin_metrics(
         if linkedin_data.get("_meta", {}).get("requires_manual_entry"):
             manual_required += 1
 
-        metrics.append({
-            "candidate_id": candidate_id,
-            "linkedin_username": linkedin_data["linkedin_username"],
-            "linkedin_url": linkedin_data["linkedin_url"],
-            "followers_count": linkedin_data["followers_count"],
-            "connections_count": linkedin_data["connections_count"],
-            "headline": linkedin_data["headline"],
-            "source": linkedin_data["source"],
-            "_meta": linkedin_data.get("_meta", {}),
-        })
+        metrics.append(
+            {
+                "candidate_id": candidate_id,
+                "linkedin_username": linkedin_data["linkedin_username"],
+                "linkedin_url": linkedin_data["linkedin_url"],
+                "followers_count": linkedin_data["followers_count"],
+                "connections_count": linkedin_data["connections_count"],
+                "headline": linkedin_data["headline"],
+                "source": linkedin_data["source"],
+                "_meta": linkedin_data.get("_meta", {}),
+            }
+        )
         fetched_count += 1
 
     context.log.info(
@@ -227,9 +226,7 @@ def social_followers_aggregation(
         if candidate_id and followers is not None:
             aggregation[candidate_id] = aggregation.get(candidate_id, 0) + followers
 
-    context.log.info(
-        f"Aggregated social followers for {len(aggregation)} candidates"
-    )
+    context.log.info(f"Aggregated social followers for {len(aggregation)} candidates")
 
     # In a full implementation, this would update normalized_candidates
     # For now, return the aggregation map

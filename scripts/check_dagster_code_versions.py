@@ -11,16 +11,15 @@ Exit codes:
     0: All checks passed
     1: Asset code changed without code_version update
 """
+
 from __future__ import annotations
 
 import argparse
 import ast
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -30,7 +29,7 @@ class AssetInfo:
     name: str
     file_path: str
     line_number: int
-    code_version: Optional[str]
+    code_version: str | None
 
 
 def get_staged_python_files() -> list:
@@ -59,9 +58,9 @@ def get_file_content_before_staging(file_path: Path) -> str:
     return result.stdout if result.returncode == 0 else ""
 
 
-def extract_code_version_value(decorator_node: ast.Call) -> Optional[str]:
+def extract_code_version_value(decorator_node: ast.Call) -> str | None:
     """Extract code_version literal value from decorator.
-    
+
     Only extracts string literals. Variable references are not supported
     to keep the hook simple and the versioning explicit.
     """
@@ -105,7 +104,7 @@ def find_assets_in_code(code: str, file_path: str) -> dict:
     return assets
 
 
-def get_asset_body_hash(code: str, asset_name: str) -> Optional[str]:
+def get_asset_body_hash(code: str, asset_name: str) -> str | None:
     """Get a hash-like representation of an asset function's body.
 
     This excludes comments and docstrings for comparison purposes.
@@ -152,7 +151,7 @@ def check_asset_code_versions(verbose: bool = False) -> list:
         # Skip new files - they don't need version comparison
         if not old_code:
             if verbose:
-                print(f"    New file, skipping...")
+                print("    New file, skipping...")
             continue
 
         new_assets = find_assets_in_code(new_code, str(file_path))
@@ -216,14 +215,8 @@ def check_asset_code_versions(verbose: bool = False) -> list:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Check Dagster asset code_version updates"
-    )
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Show verbose output"
-    )
+    parser = argparse.ArgumentParser(description="Check Dagster asset code_version updates")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output")
     args = parser.parse_args()
 
     errors, warnings = check_asset_code_versions(verbose=args.verbose)

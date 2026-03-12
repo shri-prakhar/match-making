@@ -78,7 +78,7 @@ class TestJobsExports:
         assert timezone_lookup_schedule.name == "timezone_lookup_daily"
 
     def test_all_jobs_count(self):
-        assert len(all_jobs) == 14
+        assert len(all_jobs) == 15
 
     def test_all_schedules_count(self):
         assert len(all_schedules) == 2

@@ -9,6 +9,7 @@ Usage:
     poetry run with-remote-db python scripts/analyze_matchmaking_scores.py recIqBsuF33YrIrMX
     On server: poetry run python scripts/analyze_matchmaking_scores.py --local [partition_id]
 """
+
 import os
 import sys
 
@@ -65,8 +66,8 @@ def main() -> None:
     )
     job_skills = cur.fetchall()
 
-    must_have = [r["skill_name"] for r in job_skills if r["requirement_type"] == "must_have"]
-    nice_to_have = [r["skill_name"] for r in job_skills if r["requirement_type"] == "nice_to_have"]
+    _must_have = [r["skill_name"] for r in job_skills if r["requirement_type"] == "must_have"]
+    _nice_to_have = [r["skill_name"] for r in job_skills if r["requirement_type"] == "nice_to_have"]
 
     # Match rows for this job
     cur.execute(
@@ -121,12 +122,16 @@ def main() -> None:
             years = f", min_years={r['min_years']}" if r.get("min_years") is not None else ""
             level = f", min_level={r['min_level']}" if r.get("min_level") is not None else ""
             print(f"  • {name}  [{rt}]{years}{level}")
-        print(f"  Must-have weight = 3, nice-to-have weight = 1 in skill_coverage_score.")
+        print("  Must-have weight = 3, nice-to-have weight = 1 in skill_coverage_score.")
 
     print("\n--- HOW COMBINED SCORE IS COMPUTED ---")
-    print("  combined_01 = 0.35*vector + 0.40*skill_fit + 0.10*comp + 0.15*location - seniority_deduction (cap 0.2)")
+    print(
+        "  combined_01 = 0.35*vector + 0.40*skill_fit + 0.10*comp + 0.15*location - seniority_deduction (cap 0.2)"
+    )
     print("  vector = 0.40*role_sim + 0.35*domain_sim + 0.25*culture_sim")
-    print("  skill_fit = 0.80*skill_coverage + 0.20*skill_semantic (when ≥1 job skill matches candidate); else skill_fit = skill_coverage")
+    print(
+        "  skill_fit = 0.80*skill_coverage + 0.20*skill_semantic (when ≥1 job skill matches candidate); else skill_fit = skill_coverage"
+    )
 
     for m in matches:
         cid = str(m["candidate_id"])
@@ -140,13 +145,17 @@ def main() -> None:
         ds = m["domain_similarity_score"]
         cs = m["culture_similarity_score"]
         vec = (0.40 * (rs or 0) + 0.35 * (ds or 0) + 0.25 * (cs or 0)) * 100
-        print(f"  Vector: role={rs:.4f}, domain={ds:.4f}, culture={cs:.4f}  → weighted 0–100 ≈ {vec:.2f}")
+        print(
+            f"  Vector: role={rs:.4f}, domain={ds:.4f}, culture={cs:.4f}  → weighted 0–100 ≈ {vec:.2f}"
+        )
 
         sf = m["skills_match_score"]
         comp = m["compensation_match_score"]
         exp = m["experience_match_score"]
         loc = m["location_match_score"]
-        print(f"  Skills fit: {sf:.4f}  |  Compensation: {comp:.4f}  |  Experience: {exp:.4f}  |  Location: {loc:.4f}")
+        print(
+            f"  Skills fit: {sf:.4f}  |  Compensation: {comp:.4f}  |  Experience: {exp:.4f}  |  Location: {loc:.4f}"
+        )
 
         comb = float(m["match_score"] or 0)
         vector_01 = 0.40 * (rs or 0) + 0.35 * (ds or 0) + 0.25 * (cs or 0)
@@ -155,22 +164,34 @@ def main() -> None:
         contrib_comp = 0.10 * (comp or 0)
         contrib_loc = 0.15 * (loc or 0)
         base_sum = contrib_vec + contrib_skill + contrib_comp + contrib_loc
-        print(f"  Combined (before seniority): 0.35*vector + 0.40*skill + 0.10*comp + 0.15*loc")
-        print(f"    vector_01 = {vector_01:.4f}  →  0.35*{vector_01:.4f} + 0.40*{sf:.4f} + 0.10*{comp:.4f} + 0.15*{loc:.4f}")
-        print(f"    ≈ {contrib_vec:.4f} + {contrib_skill:.4f} + {contrib_comp:.4f} + {contrib_loc:.4f} = {base_sum:.4f}")
+        print("  Combined (before seniority): 0.35*vector + 0.40*skill + 0.10*comp + 0.15*loc")
+        print(
+            f"    vector_01 = {vector_01:.4f}  →  0.35*{vector_01:.4f} + 0.40*{sf:.4f} + 0.10*{comp:.4f} + 0.15*{loc:.4f}"
+        )
+        print(
+            f"    ≈ {contrib_vec:.4f} + {contrib_skill:.4f} + {contrib_comp:.4f} + {contrib_loc:.4f} = {base_sum:.4f}"
+        )
         print(f"  Stored match_score (0–1): {comb:.4f}  → combined % = {comb*100:.2f}")
 
         matching = m["matching_skills"] or []
         missing = m["missing_skills"] or []
-        print(f"  Matching skills (job required/nice-to-have that candidate has): {matching if matching else '(none)'}")
-        print(f"  Missing skills (job required/nice-to-have that candidate lacks): {missing if missing else '(none)'}")
+        print(
+            f"  Matching skills (job required/nice-to-have that candidate has): {matching if matching else '(none)'}"
+        )
+        print(
+            f"  Missing skills (job required/nice-to-have that candidate lacks): {missing if missing else '(none)'}"
+        )
         if job_skills and not matching and not missing:
-            print("  → At run time this job had no required skills in the DB, so skill_coverage=1.0 and matching/missing were empty.")
+            print(
+                "  → At run time this job had no required skills in the DB, so skill_coverage=1.0 and matching/missing were empty."
+            )
 
         cand_skills = cand_skills_by_id.get(cid, [])
         print(f"  Candidate's skills ({len(cand_skills)}):")
         for sk in sorted(cand_skills, key=lambda x: (x["skill_name"] or "")):
-            print(f"    • {sk['skill_name']}: rating={sk['rating']}/10, years={sk.get('years_experience')}")
+            print(
+                f"    • {sk['skill_name']}: rating={sk['rating']}/10, years={sk.get('years_experience')}"
+            )
 
         llm = m.get("llm_fit_score")
         if llm is not None:

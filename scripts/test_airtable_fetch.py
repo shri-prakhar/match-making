@@ -46,7 +46,7 @@ def main():
 
     # Show first 3 candidates as a sample
     for i, record in enumerate(records[:3]):
-        print(f"\n--- Candidate {i+1} ---")
+        print(f"\n--- Candidate {i + 1} ---")
         print(f"  Record ID:    {record.get('airtable_record_id')}")
         print(f"  Full Name:    {record.get('full_name')}")
         print(f"  Location:     {record.get('location_raw')}")

@@ -100,18 +100,18 @@ def main():
     has_summary = sum(1 for r in sample_records if r.get("professional_summary"))
 
     print(f"\nData Completeness ({sample_size} candidates):")
-    print(f"  ├── CV URL:         {has_cv:3d}/{sample_size} ({100*has_cv/sample_size:.0f}%)")
+    print(f"  ├── CV URL:         {has_cv:3d}/{sample_size} ({100 * has_cv / sample_size:.0f}%)")
     print(
-        f"  ├── Skills:         {has_skills:3d}/{sample_size} ({100*has_skills/sample_size:.0f}%)"
+        f"  ├── Skills:         {has_skills:3d}/{sample_size} ({100 * has_skills / sample_size:.0f}%)"
     )
     print(
-        f"  ├── Summary:        {has_summary:3d}/{sample_size} ({100*has_summary/sample_size:.0f}%)"
+        f"  ├── Summary:        {has_summary:3d}/{sample_size} ({100 * has_summary / sample_size:.0f}%)"
     )
     print(
-        f"  ├── LinkedIn:       {has_linkedin:3d}/{sample_size} ({100*has_linkedin/sample_size:.0f}%)"
+        f"  ├── LinkedIn:       {has_linkedin:3d}/{sample_size} ({100 * has_linkedin / sample_size:.0f}%)"
     )
     print(
-        f"  └── GitHub:         {has_github:3d}/{sample_size} ({100*has_github/sample_size:.0f}%)"
+        f"  └── GitHub:         {has_github:3d}/{sample_size} ({100 * has_github / sample_size:.0f}%)"
     )
 
     print("\nPipeline Stages:")

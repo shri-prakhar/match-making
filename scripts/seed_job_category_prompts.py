@@ -7,14 +7,13 @@ On server: poetry run python scripts/seed_job_category_prompts.py --local
 Upserts by job_category (insert or update). Adds alias Compliance = Legal.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from talent_matching.db import get_session
 from talent_matching.models.job_category_prompts import JobCategoryPromptsRecord
 from talent_matching.script_env import apply_local_db
-
 
 # From docs/job-category-prompts-proposal.md (Notion: Data Points per Job Category).
 # CV extraction: emphasize category-relevant skills and evidence; extract generously — more skills with evidence is better.
@@ -174,7 +173,7 @@ def _legal_prompts():
 def main():
     apply_local_db()
     session = get_session()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     legal_cv, legal_ref = _legal_prompts()
 
     for job_category, cv_extraction_prompt, refinement_prompt in CATEGORY_PROMPTS:
@@ -219,7 +218,9 @@ def main():
 
     session.commit()
     session.close()
-    print(f"Upserted {len(CATEGORY_PROMPTS) + 1} rows into job_category_prompts (including Compliance alias).")
+    print(
+        f"Upserted {len(CATEGORY_PROMPTS) + 1} rows into job_category_prompts (including Compliance alias)."
+    )
 
 
 if __name__ == "__main__":

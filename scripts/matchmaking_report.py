@@ -28,8 +28,8 @@ from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
-from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.config.scoring import get_weights_for_job_category  # noqa: E402
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 # Max characters of CV to show per candidate (avoid huge output)
 CV_EXCERPT_CHARS = 4000

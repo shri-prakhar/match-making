@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Launch ats_matchmaking_pipeline for partitions after an upstream run finishes.
+"""Launch ats_matchmaking_pipeline for partitions after an upstream run or backfill finishes.
 
-Polls the Dagster GraphQL API until the specified run reaches a terminal status,
-then launches matchmaking for each partition.
+Polls the Dagster GraphQL API until the specified run or backfill reaches a terminal
+status, then launches matchmaking for each partition.
 
 Prerequisites:
   - poetry run remote-ui RUNNING (webserver at localhost:3000, tunnel to remote)
@@ -10,9 +10,9 @@ Prerequisites:
   - Deploy to remote first so the daemon has latest code (schedule_matchmaking_after_backfill --deploy or run_remote_matchmaking.sh)
 
 Usage:
-  poetry run python scripts/launch_matchmaking_after_run.py jdhtiqny recABC,recDEF,recGHI
-  poetry run python scripts/launch_matchmaking_after_run.py jdhtiqny recABC --poll-interval 15
-  poetry run python scripts/launch_matchmaking_after_run.py jdhtiqny recABC --on-failure
+  poetry run python scripts/launch_matchmaking_after_run.py <run_id> recABC,recDEF,recGHI
+  poetry run python scripts/launch_matchmaking_after_run.py --backfill-id jdhtiqny recABC,recDEF --poll-interval 15
+  poetry run python scripts/launch_matchmaking_after_run.py --backfill-id jdhtiqny recABC --on-failure
 """
 
 import argparse
@@ -41,6 +41,21 @@ query RunStatus($runId: ID!) {
 }
 """
 
+BACKFILL_STATUS_QUERY = """
+query BackfillStatus($backfillId: String!) {
+  partitionBackfillOrError(backfillId: $backfillId) {
+    __typename
+    ... on PartitionBackfill {
+      id
+      status
+    }
+    ... on BackfillNotFoundError {
+      message
+    }
+  }
+}
+"""
+
 LAUNCH_MUTATION = """
 mutation LaunchRun($executionParams: ExecutionParams!) {
   launchRun(executionParams: $executionParams) {
@@ -59,6 +74,9 @@ mutation LaunchRun($executionParams: ExecutionParams!) {
 """
 
 TERMINAL_STATUSES = frozenset({"SUCCESS", "FAILURE", "CANCELED", "CANCELING"})
+BACKFILL_TERMINAL_STATUSES = frozenset(
+    {"COMPLETED", "COMPLETED_FAILED", "FAILED", "FAILING", "CANCELED"}
+)
 
 
 def get_run_status(run_id: str) -> tuple[str | None, str | None]:
@@ -86,6 +104,31 @@ def get_run_status(run_id: str) -> tuple[str | None, str | None]:
     return None, f"Unexpected response: {result}"
 
 
+def get_backfill_status(backfill_id: str) -> tuple[str | None, str | None]:
+    """Query backfill status. Returns (status, error_message)."""
+    variables = {"backfillId": backfill_id}
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.post(
+            GRAPHQL_URL,
+            json={"query": BACKFILL_STATUS_QUERY, "variables": variables},
+            headers={"Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    if "errors" in data:
+        return None, json.dumps(data["errors"])
+
+    result = data.get("data", {}).get("partitionBackfillOrError", {})
+    typename = result.get("__typename")
+
+    if typename == "PartitionBackfill":
+        return result.get("status"), None
+    if typename == "BackfillNotFoundError":
+        return None, result.get("message", "Backfill not found")
+    return None, f"Unexpected response: {result}"
+
+
 def launch_matchmaking_run(partition_id: str) -> dict:
     """Launch ats_matchmaking_pipeline for the given partition. Returns GraphQL response."""
     variables = {
@@ -101,7 +144,7 @@ def launch_matchmaking_run(partition_id: str) -> dict:
             },
         }
     }
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=120.0) as client:
         resp = client.post(
             GRAPHQL_URL,
             json={"query": LAUNCH_MUTATION, "variables": variables},
@@ -116,12 +159,19 @@ def main() -> int:
         description="Launch ats_matchmaking_pipeline after an upstream run finishes."
     )
     parser.add_argument(
-        "run_id",
-        help="Run ID to wait for (e.g. jdhtiqny)",
+        "run_or_backfill_id",
+        nargs="?",
+        help="Run ID or backfill ID to wait for",
     )
     parser.add_argument(
         "partitions",
+        nargs="?",
         help="Comma-separated partition IDs (e.g. recABC,recDEF,recGHI)",
+    )
+    parser.add_argument(
+        "--backfill-id",
+        metavar="ID",
+        help="Treat first arg as backfill ID (poll partitionBackfillOrError)",
     )
     parser.add_argument(
         "--poll-interval",
@@ -132,36 +182,56 @@ def main() -> int:
     parser.add_argument(
         "--on-failure",
         action="store_true",
-        help="Launch matchmaking even when upstream run fails",
+        help="Launch matchmaking even when upstream run/backfill fails",
     )
     args = parser.parse_args()
 
-    partition_ids = [p.strip() for p in args.partitions.split(",") if p.strip()]
+    if args.backfill_id:
+        target_id = args.backfill_id
+        partitions_arg = args.run_or_backfill_id or args.partitions or ""
+    else:
+        target_id = args.run_or_backfill_id
+        partitions_arg = args.partitions or ""
+    if not target_id:
+        parser.error("Provide run_id or --backfill-id <id>")
+    partition_ids = [p.strip() for p in partitions_arg.split(",") if p.strip()]
     if not partition_ids:
         print("No partitions specified", file=sys.stderr)
         return 1
 
-    print(f"Waiting for run {args.run_id} to finish (poll every {args.poll_interval}s)...")
+    is_backfill = bool(args.backfill_id)
+    terminal_statuses = BACKFILL_TERMINAL_STATUSES if is_backfill else TERMINAL_STATUSES
+    success_status = "COMPLETED" if is_backfill else "SUCCESS"
+
+    print(
+        f"Waiting for {'backfill' if is_backfill else 'run'} {target_id} to finish "
+        f"(poll every {args.poll_interval}s)..."
+    )
     while True:
-        status, err = get_run_status(args.run_id)
+        if is_backfill:
+            status, err = get_backfill_status(target_id)
+        else:
+            status, err = get_run_status(target_id)
         if err:
-            print(f"Error querying run: {err}", file=sys.stderr)
+            print(f"Error querying: {err}", file=sys.stderr)
             return 1
 
-        if status in TERMINAL_STATUSES:
-            print(f"Run {args.run_id} finished with status: {status}")
+        if status in terminal_statuses:
+            print(
+                f"{'Backfill' if is_backfill else 'Run'} {target_id} finished with status: {status}"
+            )
             break
 
-        print(f"  Run status: {status}")
+        print(f"  Status: {status}")
         time.sleep(args.poll_interval)
 
-    if status == "SUCCESS":
+    if status == success_status:
         pass
     elif args.on_failure:
         print("Upstream failed; proceeding anyway (--on-failure)")
     else:
         print(
-            f"Upstream run failed (status={status}). Use --on-failure to proceed anyway.",
+            f"Upstream failed (status={status}). Use --on-failure to proceed anyway.",
             file=sys.stderr,
         )
         return 1

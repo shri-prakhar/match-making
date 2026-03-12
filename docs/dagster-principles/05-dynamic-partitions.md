@@ -33,7 +33,7 @@ job_partitions = DynamicPartitionsDefinition(name="jobs")
 def raw_candidates(context: AssetExecutionContext) -> dict:
     """Process a single candidate."""
     candidate_id = context.partition_key
-    
+
     # Fetch only this candidate
     return fetch_candidate_by_id(candidate_id)
 
@@ -70,16 +70,16 @@ from dagster import sensor, RunRequest
 @sensor(job=candidate_pipeline_job)
 def new_candidate_sensor(context: SensorEvaluationContext):
     new_candidates = fetch_unprocessed_candidates()
-    
+
     for candidate in new_candidates:
         candidate_id = candidate["id"]
-        
+
         # Add new partition key (idempotent operation)
         context.instance.add_dynamic_partitions(
             partitions_def_name="candidates",
             partition_keys=[candidate_id],
         )
-        
+
         # Trigger run for this specific partition
         yield RunRequest(
             run_key=f"candidate-{candidate_id}",

@@ -20,9 +20,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from talent_matching.script_env import apply_local_db  # noqa: E402
 import psycopg2  # noqa: E402
 from psycopg2.extras import RealDictCursor  # noqa: E402
+
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 
 def check_gaps(conn, limit: int | None) -> None:

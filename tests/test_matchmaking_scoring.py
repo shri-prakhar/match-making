@@ -2,13 +2,20 @@
 
 from talent_matching.matchmaking.scoring import (
     SENIORITY_MAX_DEDUCTION,
+    candidate_seniority_scale,
     compensation_fit,
     cosine_similarity,
     cosine_similarity_batch,
+    job_is_high_stakes,
+    job_required_seniority_scale,
     location_score,
+    seniority_level_ordinal,
+    seniority_level_penalty,
     seniority_penalty_and_experience_score,
+    seniority_scale_fit,
     skill_coverage_score,
     skill_semantic_score,
+    tenure_instability_penalty,
 )
 
 
@@ -212,6 +219,140 @@ class TestSeniorityPenaltyAndExperienceScore:
     def test_experience_score_in_unit_interval(self):
         _, score = seniority_penalty_and_experience_score(10, 20, 1, [], {})
         assert 0.0 <= score <= 1.0
+
+
+class TestSeniorityLevelOrdinal:
+    """Tests for seniority_level_ordinal."""
+
+    def test_known_levels_return_ordinal(self):
+        assert seniority_level_ordinal("JUNIOR") == 0
+        assert seniority_level_ordinal("junior") == 0
+        assert seniority_level_ordinal("MID") == 1
+        assert seniority_level_ordinal("SENIOR") == 2
+        assert seniority_level_ordinal("EXECUTIVE") == 6
+
+    def test_unknown_or_none_return_none(self):
+        assert seniority_level_ordinal(None) is None
+        assert seniority_level_ordinal("") is None
+        assert seniority_level_ordinal("unknown") is None
+
+
+class TestSeniorityLevelPenalty:
+    """Tests for seniority_level_penalty."""
+
+    def test_no_penalty_when_candidate_at_or_above_job_level(self):
+        assert seniority_level_penalty("SENIOR", "SENIOR", 0.1) == 0.0
+        assert seniority_level_penalty("SENIOR", "STAFF", 0.1) == 0.0
+        assert seniority_level_penalty("MID", "MID", 0.1) == 0.0
+
+    def test_penalty_when_candidate_below_job_level(self):
+        assert seniority_level_penalty("SENIOR", "MID", 0.1) > 0.0
+        assert seniority_level_penalty("SENIOR", "JUNIOR", 0.1) > 0.0
+
+    def test_unknown_level_no_penalty(self):
+        assert seniority_level_penalty(None, "SENIOR", 0.1) == 0.0
+        assert seniority_level_penalty("SENIOR", None, 0.1) == 0.0
+
+
+class TestCandidateSeniorityScale:
+    """Tests for candidate_seniority_scale."""
+
+    def test_scale_in_unit_interval(self):
+        assert 0.0 <= candidate_seniority_scale({}) <= 1.0
+        assert 0.0 <= candidate_seniority_scale({"seniority_level": "SENIOR"}) <= 1.0
+
+    def test_higher_level_higher_scale(self):
+        j = candidate_seniority_scale({"seniority_level": "JUNIOR"})
+        s = candidate_seniority_scale({"seniority_level": "SENIOR"})
+        e = candidate_seniority_scale({"seniority_level": "EXECUTIVE"})
+        assert j < s < e
+
+    def test_years_nudge_scale(self):
+        base = candidate_seniority_scale({"seniority_level": "SENIOR"})
+        with_years = candidate_seniority_scale(
+            {"seniority_level": "SENIOR", "years_of_experience": 10}
+        )
+        assert with_years >= base
+
+
+class TestJobRequiredSeniorityScale:
+    """Tests for job_required_seniority_scale."""
+
+    def test_none_when_no_level(self):
+        assert job_required_seniority_scale({}) is None
+        assert job_required_seniority_scale({"seniority_level": None}) is None
+
+    def test_returns_scale_when_level_set(self):
+        s = job_required_seniority_scale({"seniority_level": "SENIOR"})
+        assert s is not None
+        assert 0.0 <= s <= 1.0
+
+
+class TestSeniorityScaleFit:
+    """Tests for seniority_scale_fit."""
+
+    def test_one_when_no_job_requirement(self):
+        assert seniority_scale_fit(0.3, None) == 1.0
+
+    def test_one_when_candidate_meets_or_exceeds(self):
+        assert seniority_scale_fit(0.6, 0.5) == 1.0
+        assert seniority_scale_fit(0.5, 0.5) == 1.0
+
+    def test_below_one_when_candidate_below_required(self):
+        fit = seniority_scale_fit(0.3, 0.6)
+        assert 0.0 <= fit < 1.0
+
+
+class TestTenureInstabilityPenalty:
+    """Tests for tenure_instability_penalty (linear on avg tenure: 0mo→1, 18mo→0)."""
+
+    def test_zero_when_job_not_high_stakes(self):
+        assert (
+            tenure_instability_penalty(
+                {"average_tenure_months": 6, "job_count": 10},
+                False,
+            )
+            == 0.0
+        )
+
+    def test_linear_scale_on_average_tenure(self):
+        # 0 months → penalty 1; 9 months → 0.5; 18+ → 0
+        assert tenure_instability_penalty({"average_tenure_months": 0}, True) == 1.0
+        assert tenure_instability_penalty({"average_tenure_months": 9}, True) == 0.5
+        assert tenure_instability_penalty({"average_tenure_months": 18}, True) == 0.0
+        assert tenure_instability_penalty({"average_tenure_months": 36}, True) == 0.0
+
+    def test_penalty_when_high_stakes_and_short_tenure(self):
+        # avg_tenure 10 → 1 - 10/18 = 8/18
+        p = tenure_instability_penalty({"average_tenure_months": 10}, True)
+        assert abs(p - (1.0 - 10 / 18)) < 1e-9
+        assert 0.0 < p < 1.0
+
+    def test_zero_when_avg_tenure_missing(self):
+        assert tenure_instability_penalty({}, True) == 0.0
+        assert tenure_instability_penalty({"job_count": 10}, True) == 0.0
+
+    def test_zero_when_high_stakes_but_stable_candidate(self):
+        cand = {"average_tenure_months": 36, "job_count": 2}
+        assert tenure_instability_penalty(cand, True) == 0.0
+
+
+class TestJobIsHighStakes:
+    """Tests for job_is_high_stakes."""
+
+    def test_true_for_senior_plus(self):
+        assert job_is_high_stakes({"seniority_level": "SENIOR"}) is True
+        assert job_is_high_stakes({"seniority_level": "STAFF"}) is True
+        assert job_is_high_stakes({"seniority_level": "LEAD"}) is True
+        assert job_is_high_stakes({"seniority_level": "EXECUTIVE"}) is True
+
+    def test_false_for_junior_mid(self):
+        assert job_is_high_stakes({"seniority_level": "JUNIOR"}) is False
+        assert job_is_high_stakes({"seniority_level": "MID"}) is False
+
+    def test_false_when_missing(self):
+        assert job_is_high_stakes({}) is False
+        assert job_is_high_stakes({"seniority_level": None}) is False
 
 
 class TestConstants:

@@ -31,11 +31,11 @@ load_dotenv()
 # Add project root for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from talent_matching.script_env import apply_local_db  # noqa: E402
 from talent_matching.config.scoring import (  # noqa: E402
     ScoringWeights,
     get_weights_for_job_category,
 )
+from talent_matching.script_env import apply_local_db  # noqa: E402
 
 
 def get_connection():
@@ -161,7 +161,10 @@ def inspect_matches(partition_id: str, verify_location: bool = False) -> None:
 
     print("\n" + "-" * 80)
     print("  SCORING BREAKDOWN (stored matches)")
-    print(f"  Weights: from {weights_source}" + (f" (job_category={job_category})" if job_category else ""))
+    print(
+        f"  Weights: from {weights_source}"
+        + (f" (job_category={job_category})" if job_category else "")
+    )
     print(
         f"  Formula: vector={weights.vector_weight:.2f} (role/domain/culture/impact/tech) + skill_fit={weights.skill_fit_weight:.2f} "
         f"+ comp={weights.compensation_weight:.2f} + location={weights.location_weight:.2f} + seniority_scale={weights.seniority_scale_weight:.2f} "

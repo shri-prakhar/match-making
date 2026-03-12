@@ -63,13 +63,13 @@ def candidate_matches(
 ) -> list[dict]:
     """Match ONE candidate against ALL jobs."""
     candidate_id = context.partition_key
-    
+
     # Load this candidate's vectors (from upstream asset)
     cand_vecs = candidate_vectors
-    
+
     # Load ALL job vectors from database (not from Dagster assets)
     all_job_vectors = load_all_job_vectors_from_db()
-    
+
     # Compute match scores
     matches = []
     for job in all_job_vectors:
@@ -84,7 +84,7 @@ def candidate_matches(
             "keyword_score": score["keyword"],
             "vector_score": score["vector"],
         })
-    
+
     # Return top matches
     return sorted(matches, key=lambda x: x["match_score"], reverse=True)[:50]
 ```
@@ -102,13 +102,13 @@ def job_matches(
 ) -> list[dict]:
     """Match ONE job against ALL candidates."""
     job_id = context.partition_key
-    
+
     # Load this job's vectors
     job_vecs = job_vectors
-    
+
     # Load ALL candidate vectors from database
     all_candidate_vectors = load_all_candidate_vectors_from_db()
-    
+
     # Compute match scores
     matches = []
     for candidate in all_candidate_vectors:
@@ -123,7 +123,7 @@ def job_matches(
             "keyword_score": score["keyword"],
             "vector_score": score["vector"],
         })
-    
+
     return sorted(matches, key=lambda x: x["match_score"], reverse=True)[:50]
 ```
 
@@ -134,13 +134,13 @@ def load_all_job_vectors_from_db() -> list[dict]:
     """Load all job vectors directly from PostgreSQL."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute("""
         SELECT job_id, vector_type, vector
         FROM job_vectors
         WHERE vector_type = 'role_description'
     """)
-    
+
     results = []
     for row in cursor.fetchall():
         results.append({
@@ -148,7 +148,7 @@ def load_all_job_vectors_from_db() -> list[dict]:
             "vector_type": row[1],
             "vector": parse_vector(row[2]),
         })
-    
+
     cursor.close()
     conn.close()
     return results
@@ -177,18 +177,18 @@ def find_top_job_matches(candidate_vector: list[float], limit: int = 50):
     """Use pgvector for efficient similarity search."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     vector_str = "[" + ",".join(str(v) for v in candidate_vector) + "]"
-    
+
     cursor.execute("""
-        SELECT job_id, 
+        SELECT job_id,
                1 - (vector <=> %s::vector) as similarity
         FROM job_vectors
         WHERE vector_type = 'role_description'
         ORDER BY vector <=> %s::vector
         LIMIT %s
     """, (vector_str, vector_str, limit))
-    
+
     return cursor.fetchall()
 ```
 

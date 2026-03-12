@@ -89,7 +89,7 @@ def main() -> int:
             "description": "Link to Matches table view filtered by this job (populated by pipeline)",
         },
     )
-    print(f"Done. Add AIRTABLE_MATCHES_VIEW_URL to .env (shared view URL of Matches table).")
+    print("Done. Add AIRTABLE_MATCHES_VIEW_URL to .env (shared view URL of Matches table).")
     return 0
 
 

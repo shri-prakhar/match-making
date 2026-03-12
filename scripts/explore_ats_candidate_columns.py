@@ -77,7 +77,18 @@ def main() -> None:
         all_field_names = set()
         for r in records:
             all_field_names.update(r.get("fields", {}).keys())
-        linked_like = sorted([f for f in all_field_names if "talent" in f.lower() or "hired" in f.lower() or "introduction" in f.lower() or "fit" in f.lower() or "rejection" in f.lower() or "candidate" in f.lower()])
+        linked_like = sorted(
+            [
+                f
+                for f in all_field_names
+                if "talent" in f.lower()
+                or "hired" in f.lower()
+                or "introduction" in f.lower()
+                or "fit" in f.lower()
+                or "rejection" in f.lower()
+                or "candidate" in f.lower()
+            ]
+        )
         print(f"\nAll candidate-related field names in ATS: {linked_like}\n")
 
     # Per-column stats
@@ -103,7 +114,9 @@ def main() -> None:
         print(f"    Records with ≥1 candidate: {records_with_data}/{total_records} ({pct:.1f}%)")
         print(f"    Total candidate links:    {total_links}")
         if sample_record_ids:
-            print(f"    Sample (rec, count):      {list(zip(sample_record_ids[:3], sample_counts))}")
+            print(
+                f"    Sample (rec, count):      {list(zip(sample_record_ids[:3], sample_counts))}"
+            )
 
     # Unique candidates per column (deduplicated across records)
     print("\n" + "=" * 80)

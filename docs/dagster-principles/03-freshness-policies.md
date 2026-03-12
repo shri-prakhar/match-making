@@ -63,7 +63,7 @@ raw_candidates[X] changes
         ▼ (triggers)
 normalized_candidates[X] re-runs
         │
-        ▼ (triggers)  
+        ▼ (triggers)
 candidate_vectors[X] re-runs
         │
         ▼ (triggers)
@@ -128,12 +128,12 @@ import hashlib
 def cv_files(context):
     """Track when actual CV files change, not just time."""
     files = list(Path("cvs/").glob("*.pdf"))
-    
+
     # Hash based on file contents/modification times
     content_hash = hashlib.md5(
         str([(f.name, f.stat().st_mtime) for f in files]).encode()
     ).hexdigest()
-    
+
     # Only triggers downstream when hash changes
     return DataVersion(content_hash)
 ```

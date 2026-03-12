@@ -20,8 +20,8 @@ import sys
 
 sys.path.insert(0, __import__("pathlib").Path(__file__).resolve().parents[1])
 
-from talent_matching.script_env import apply_local_db
 from scripts.inspect_utils import get_connection
+from talent_matching.script_env import apply_local_db
 
 
 def main() -> int:

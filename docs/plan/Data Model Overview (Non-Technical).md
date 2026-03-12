@@ -1,6 +1,6 @@
 # Data Model Overview: Talent Matching MVP
 
-> **For:** Product, Recruiting, and Business Team Members  
+> **For:** Product, Recruiting, and Business Team Members
 > **Date:** February 2026
 
 ---

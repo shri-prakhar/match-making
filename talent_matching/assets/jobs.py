@@ -28,17 +28,6 @@ from dagster import (
 )
 from sqlalchemy import select
 
-from talent_matching.config.scoring import (
-    COMPENSATION_WEIGHT,
-    CULTURE_WEIGHT,
-    DOMAIN_WEIGHT,
-    LOCATION_WEIGHT,
-    ROLE_WEIGHT,
-    SKILL_FIT_WEIGHT,
-    SKILL_RATING_WEIGHT,
-    SKILL_SEMANTIC_WEIGHT,
-    VECTOR_WEIGHT,
-)
 from talent_matching.db import get_session
 from talent_matching.llm import (
     CV_PROMPT_VERSION,
@@ -64,13 +53,18 @@ from talent_matching.matchmaking.location_filter import (
     parse_job_preferred_locations,
 )
 from talent_matching.matchmaking.scoring import (
-    SENIORITY_MAX_DEDUCTION,
+    candidate_seniority_scale,
     compensation_fit,
     cosine_similarity_batch,
+    job_is_high_stakes,
+    job_required_seniority_scale,
     location_score,
+    seniority_level_penalty,
     seniority_penalty_and_experience_score,
+    seniority_scale_fit,
     skill_coverage_score,
     skill_semantic_score,
+    tenure_instability_penalty,
 )
 from talent_matching.models.raw import RawJob
 from talent_matching.skills.resolver import load_alias_map, resolve_skill_name, skill_vector_key
@@ -263,6 +257,8 @@ def raw_jobs(
                 "Check Airtable Job Description Text/Link or run "
                 "`scripts/refresh_job_description_from_notion.py`."
             ),
+            metadata={"record_id": record_id},
+            allow_retries=False,
         )
     return base
 
@@ -367,8 +363,8 @@ def _build_job_description_for_scoring(
     description="LLM-normalized job requirements with structured fields and narratives",
     group_name="jobs",
     io_manager_key="postgres_io",
-    required_resource_keys={"openrouter"},
-    code_version="2.4.0",  # v2.4.0: fail fast on thin jobs and pass richer recruiter guidance
+    required_resource_keys={"openrouter", "matchmaking"},
+    code_version="2.5.0",  # v2.5.0: job_category from candidate taxonomy for matchmaking alignment
     metadata={
         "table": "normalized_jobs",
         "llm_operation": "normalize_job",
@@ -389,6 +385,8 @@ def normalized_jobs(
                 f"({len(job_description or '')} chars). Minimum "
                 f"{MIN_NORMALIZED_JOB_DESCRIPTION_LEN} chars required. Fix raw_jobs first."
             ),
+            metadata={"record_id": record_id},
+            allow_retries=False,
         )
     non_negotiables = (raw_jobs.get("non_negotiables") or "").strip() or None
     nice_to_have = (raw_jobs.get("nice_to_have") or "").strip() or None
@@ -396,6 +394,12 @@ def normalized_jobs(
     projected_salary = (raw_jobs.get("projected_salary") or "").strip() or None
     job_category_raw = (raw_jobs.get("job_category_raw") or "").strip() or None
     experience_level_raw = (raw_jobs.get("experience_level_raw") or "").strip() or None
+
+    matchmaking = context.resources.matchmaking
+    allowed_job_categories = matchmaking.get_allowed_job_categories()
+    context.log.info(
+        f"[normalized_jobs] record_id={record_id} Using {len(allowed_job_categories)} allowed job categories for job_category alignment"
+    )
 
     openrouter = context.resources.openrouter
     result = asyncio.run(
@@ -410,6 +414,7 @@ def normalized_jobs(
                 projected_salary=projected_salary,
                 job_category_raw=job_category_raw,
                 experience_level_raw=experience_level_raw,
+                allowed_job_categories=allowed_job_categories or None,
             ),
         )
     )
@@ -460,7 +465,7 @@ JOB_NARRATIVE_VECTOR_TYPES = [
     group_name="jobs",
     required_resource_keys={"openrouter"},
     io_manager_key="pgvector_io",
-    code_version="2.4.0",  # v2.4.0: require all job narrative texts to be meaningful
+    code_version="2.6.0",  # v2.6.0: code changed; bump for staleness detection
     op_tags={"dagster/concurrency_key": "openrouter_api"},
     metadata={
         "table": "job_vectors",
@@ -485,6 +490,8 @@ def job_vectors(
                 f"Normalized job has no normalized_json for record_id={record_id}. "
                 "Cannot generate meaningful job vectors."
             ),
+            metadata={"record_id": record_id},
+            allow_retries=False,
         )
 
     narratives = normalized_jobs.get("narratives") or {}
@@ -715,7 +722,6 @@ def location_prefiltered_candidates(
 TOP_N_PER_JOB = 30
 ALGORITHM_VERSION = "notion_v3"
 SKILL_MIN_THRESHOLD = 0.30
-SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
 
 
 @asset(
@@ -727,7 +733,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.12.0",  # v2.12.0: location prefilter allows same/adjacent timezone
+    code_version="2.13.0",  # v2.13.0: scoring weights per job_category via get_weights_for_job_category
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={
@@ -736,11 +742,7 @@ SENIORITY_PENALTY_PER_YEAR = 2  # soft penalty points per year short (overall)
     },
     metadata={
         "table": "matches",
-        "scoring_weights": {
-            "role": ROLE_WEIGHT,
-            "domain": DOMAIN_WEIGHT,
-            "culture": CULTURE_WEIGHT,
-        },
+        "scoring_weights": "per job_category via get_weights_for_job_category",
     },
 )
 def matches(
@@ -807,6 +809,7 @@ def matches(
     # returns the asset payload (no DB "id"). Resolve job id from DB by partition so required
     # skills are always loaded (see resolve_job_ids_for_required_skills and unit test).
     matchmaking = context.resources.matchmaking
+
     def _get_job_id(rid: str) -> str | None:
         job = matchmaking.get_normalized_job_by_airtable_record_id(rid)
         return str(job["id"]) if job and job.get("id") else None
@@ -833,6 +836,8 @@ def matches(
         job_role_vec = jvecs.get("role_description")
         job_domain_vec = jvecs.get("domain")
         job_personality_vec = jvecs.get("personality")
+        job_impact_vec = jvecs.get("impact")
+        job_technical_vec = jvecs.get("technical")
         req_skills = job_required_skills.get(str(job_id_norm), [])
         must_have = [
             s["skill_name"] for s in req_skills if s.get("requirement_type") == "must_have"
@@ -857,6 +862,7 @@ def matches(
         job_location_type = job.get("location_type")
         job_timezone = job.get("timezone_requirements")
         job_category = (job.get("job_category") or "").strip()
+        weights = matchmaking.get_or_create_weights_for_job_category(job.get("job_category"))
         if not must_have:
             zero_must_haves = True
             low_info_matchmaking = True
@@ -945,13 +951,44 @@ def matches(
                 if job_personality_vec and culture_vecs_arr.size
                 else np.zeros(len(filtered_candidates), dtype=np.float64)
             )
+
+            # impact: one vector per candidate
+            impact_vecs = [cvecs.get("impact") for cvecs in cand_vecs_list]
+            impact_vecs_arr = np.array(
+                [v if v is not None else np.zeros(dim, dtype=np.float32) for v in impact_vecs],
+                dtype=np.float64,
+            )
+            impact_sims = (
+                cosine_similarity_batch(np.array(job_impact_vec, dtype=np.float64), impact_vecs_arr)
+                if job_impact_vec and impact_vecs_arr.size
+                else np.zeros(len(filtered_candidates), dtype=np.float64)
+            )
+
+            # technical: one vector per candidate
+            technical_vecs = [cvecs.get("technical") for cvecs in cand_vecs_list]
+            technical_vecs_arr = np.array(
+                [v if v is not None else np.zeros(dim, dtype=np.float32) for v in technical_vecs],
+                dtype=np.float64,
+            )
+            technical_sims = (
+                cosine_similarity_batch(
+                    np.array(job_technical_vec, dtype=np.float64), technical_vecs_arr
+                )
+                if job_technical_vec and technical_vecs_arr.size
+                else np.zeros(len(filtered_candidates), dtype=np.float64)
+            )
         else:
             role_sims = np.array([], dtype=np.float64)
             domain_sims = np.array([], dtype=np.float64)
             culture_sims = np.array([], dtype=np.float64)
+            impact_sims = np.array([], dtype=np.float64)
+            technical_sims = np.array([], dtype=np.float64)
 
         rows: list[
             tuple[
+                float,
+                float,
+                float,
                 float,
                 float,
                 float,
@@ -966,14 +1003,36 @@ def matches(
                 dict[str, str],
             ]
         ] = []
+        job_req_scale = job_required_seniority_scale(job)
+        high_stakes = job_is_high_stakes(job)
+
         for idx, (candidate, raw_cand_id, cand_id_norm) in enumerate(filtered_candidates):
             cvecs = cand_vecs_by_raw.get(raw_cand_id, {})
             role_sim = float(role_sims[idx]) if idx < len(role_sims) else 0.0
             domain_sim = float(domain_sims[idx]) if idx < len(domain_sims) else 0.0
             culture_sim = float(culture_sims[idx]) if idx < len(culture_sims) else 0.0
+            impact_sim = float(impact_sims[idx]) if idx < len(impact_sims) else 0.0
+            technical_sim = float(technical_sims[idx]) if idx < len(technical_sims) else 0.0
 
             vector_score = (
-                ROLE_WEIGHT * role_sim + DOMAIN_WEIGHT * domain_sim + CULTURE_WEIGHT * culture_sim
+                weights.role_weight * role_sim
+                + weights.domain_weight * domain_sim
+                + weights.culture_weight * culture_sim
+                + weights.impact_weight * impact_sim
+                + weights.technical_weight * technical_sim
+            )
+
+            cand_scale = candidate_seniority_scale(candidate)
+            scale_fit = seniority_scale_fit(cand_scale, job_req_scale)
+            level_deduction = seniority_level_penalty(
+                job.get("seniority_level"),
+                candidate.get("seniority_level"),
+                weights.seniority_level_max_deduction,
+            )
+            tenure_deduction_raw = tenure_instability_penalty(candidate, high_stakes)
+            tenure_deduction = min(
+                weights.tenure_instability_max_deduction,
+                tenure_deduction_raw,
             )
 
             cand_skills_list = candidate_skills_map.get(cand_id_norm, [])
@@ -997,10 +1056,11 @@ def matches(
             skill_semantic = skill_semantic_score(
                 job_role_vec, cvecs, req_skills=req_skills, job_skill_vecs=jvecs
             )
-            # Semantic only when at least one skill matches; then 80% rating, 20% semantic (tie-breaker)
+            # Semantic only when at least one skill matches; then rating vs semantic (tie-breaker)
             if matching:
                 skill_fit_score = (
-                    SKILL_RATING_WEIGHT * skill_coverage + SKILL_SEMANTIC_WEIGHT * skill_semantic
+                    weights.skill_rating_weight * skill_coverage
+                    + weights.skill_semantic_weight * skill_semantic
                 )
             else:
                 skill_fit_score = skill_coverage
@@ -1046,6 +1106,9 @@ def matches(
                     compensation_match_score,
                     experience_match_score,
                     location_match_score,
+                    scale_fit,
+                    level_deduction,
+                    tenure_deduction,
                     matching,
                     missing_must + missing_nice,
                     {
@@ -1082,18 +1145,23 @@ def matches(
                 comp_score,
                 exp_score,
                 loc_score,
+                scale_fit,
+                level_ded,
+                tenure_ded,
                 matching,
                 missing,
                 ids,
             ) = r
             # Use raw vector score (no per-job min-max rescaling)
             base = (
-                VECTOR_WEIGHT * v_raw
-                + SKILL_FIT_WEIGHT * skill_fit
-                + COMPENSATION_WEIGHT * comp_score
-                + LOCATION_WEIGHT * loc_score
+                weights.vector_weight * v_raw
+                + weights.skill_fit_weight * skill_fit
+                + weights.compensation_weight * comp_score
+                + weights.location_weight * loc_score
+                + weights.seniority_scale_weight * scale_fit
             )
-            seniority_deduction = min(SENIORITY_MAX_DEDUCTION, sen_pen / 100.0)
+            years_deduction = min(weights.seniority_max_deduction, sen_pen / 100.0)
+            seniority_deduction = years_deduction + level_ded + tenure_ded
             combined_01 = max(0.0, min(1.0, base - seniority_deduction))
             scored.append(
                 (
@@ -1211,7 +1279,7 @@ def _to_candidate_list_for_shortlist(x: Any) -> list[dict[str, Any]]:
     group_name="matching",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="1.4.0",  # v1.4.0: fail fast when must-have skills are missing
+    code_version="1.5.0",  # v1.5.0: when LLM selects 0, return empty shortlist (do not upload fallback to Airtable)
     metadata={"table": "matches"},
     op_tags={"dagster/concurrency_key": "openrouter_api"},
 )
@@ -1265,6 +1333,8 @@ def llm_refined_shortlist(
                 f"normalized_job.job_description={norm_desc_len} chars. "
                 f"Check raw_jobs and normalized_jobs tables in DB for this partition."
             ),
+            metadata={"record_id": record_id},
+            allow_retries=False,
         )
     if desc_source == "synthesized" and len(job_description) < 100:
         raise Failure(
@@ -1274,6 +1344,8 @@ def llm_refined_shortlist(
                 f"LLM cannot produce meaningful scoring results. "
                 f"Check raw_jobs.job_description in DB for this partition."
             ),
+            metadata={"record_id": record_id},
+            allow_retries=False,
         )
 
     req_skills = context.resources.matchmaking.get_job_required_skills([job_id_norm])
@@ -1292,6 +1364,8 @@ def llm_refined_shortlist(
                 "LLM refinement cannot reliably filter candidates. Add clearer requirements "
                 "to the job description or normalization inputs."
             ),
+            metadata={"record_id": record_id},
+            allow_retries=False,
         )
 
     openrouter = context.resources.openrouter
@@ -1321,6 +1395,8 @@ def llm_refined_shortlist(
     # Max concurrent LLM calls; matches Dagster openrouter_api pool limit (50) and OpenRouter rate limits
     max_concurrent_llm = 30
 
+    job_category = job.get("job_category")
+
     async def _score_one(m: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
         return await score_candidate_job_fit(
             openrouter,
@@ -1331,6 +1407,7 @@ def llm_refined_shortlist(
             non_negotiables=non_negotiables,
             nice_to_have=nice_to_have,
             location_raw=location_raw,
+            job_category=job_category,
         )
 
     async def _score_all() -> list[dict[str, Any]]:
@@ -1435,22 +1512,8 @@ def llm_refined_shortlist(
     else:
         context.log.info(
             f"[llm_refined_shortlist] record_id={record_id} LLM selected 0; "
-            f"fallback: uploading top 15 by fit_score"
+            f"not uploading any candidates (no one passed refinement)"
         )
-        scored_sorted = sorted(scored, key=lambda s: s.get("fit_score", 0), reverse=True)
-        for rank, s in enumerate(scored_sorted[:15], start=1):
-            m = s["_match"]
-            r = s["_result"]
-            final.append(
-                {
-                    **m,
-                    "rank": rank,
-                    "llm_fit_score": r.get("fit_score"),
-                    "strengths": r.get("pros") or None,
-                    "red_flags": r.get("cons") or None,
-                    "used_fallback": True,
-                }
-            )
 
     fulfills_count = sum(1 for s in scored if s.get("fulfills_all_must_haves"))
     context.log.info(
@@ -1477,7 +1540,7 @@ ATS_MATCHMAKING_LAST_RUN_FIELD = "Matchmaking Last Run"
     description="Upload top match results to ATS table as linked candidate chips and set Job Status to Matchmaking Done",
     group_name="matching",
     required_resource_keys={"airtable_ats"},
-    code_version="1.3.1",  # v1.3.1: distinguish fallback "No must-have matches; showing best candidates"
+    code_version="1.3.2",  # v1.3.2: clear existing matches (AI PROPOSED + Matches table) before upload
 )
 def upload_matches_to_ats(
     context: AssetExecutionContext,
@@ -1507,16 +1570,30 @@ def upload_matches_to_ats(
 
     run_timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
+    # Clean slate: remove all existing matches for this job (ATS linked field + Matches table),
+    # same as we replace AI PROPOSED CANDIDATES with the new list.
+    ats.update_record(record_id, {ATS_AI_PROPOSED_FIELD: []})
+    if ats.matches_table_id:
+        ats.replace_matches_for_job(record_id, [])
+    context.log.info(
+        f"[upload_matches_to_ats] record_id={record_id} Cleared existing matches (AI PROPOSED CANDIDATES + Matches table)"
+    )
+
     if not matches:
         context.log.warning(
             f"[upload_matches_to_ats] record_id={record_id} No suitable candidates found"
         )
         no_match_fields: dict[str, Any] = {
+            ATS_AI_PROPOSED_FIELD: [],
             ATS_MATCHMAKING_RESULT_FIELD: "No suitable candidates found",
             ATS_MATCHMAKING_LAST_RUN_FIELD: run_timestamp,
         }
         if should_flip_status:
             no_match_fields[ATS_JOB_STATUS_FIELD] = ATS_MATCHMAKING_DONE_STATUS
+        if ats.matches_view_url:
+            base = ats.matches_view_url.rstrip("?")
+            sep = "&" if "?" in base else "?"
+            no_match_fields["View Matches"] = f"{base}{sep}filterHasAnyOf_Job={record_id}"
         ats.update_record(record_id, no_match_fields)
         return
 

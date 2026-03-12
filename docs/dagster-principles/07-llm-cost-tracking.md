@@ -83,7 +83,7 @@ CREATE INDEX idx_llm_costs_code_version ON llm_costs(code_version);
 
 -- View for cost aggregation
 CREATE VIEW llm_cost_summary AS
-SELECT 
+SELECT
     asset_key,
     operation,
     code_version,
@@ -127,7 +127,7 @@ class OpenRouterResource(ConfigurableResource):
         default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""),
     )
     default_model: str = Field(default="openai/gpt-4o-mini")
-    
+
     # Cost tracking
     _db_connection: Any = None
     _current_run_id: str = ""
@@ -156,10 +156,10 @@ class OpenRouterResource(ConfigurableResource):
     ) -> Decimal:
         """Calculate cost in USD based on model pricing."""
         pricing = MODEL_PRICING.get(model, {"input": 5.0, "output": 15.0})
-        
+
         input_cost = Decimal(str(input_tokens)) / 1_000_000 * Decimal(str(pricing["input"]))
         output_cost = Decimal(str(output_tokens)) / 1_000_000 * Decimal(str(pricing["output"]))
-        
+
         return input_cost + output_cost
 
     def _log_cost(
@@ -172,13 +172,13 @@ class OpenRouterResource(ConfigurableResource):
     ):
         """Log cost to database and Dagster."""
         logger = get_dagster_logger()
-        
+
         # Log to Dagster
         logger.info(
             f"LLM Cost: {operation} | {model} | "
             f"{input_tokens}+{output_tokens} tokens | ${cost_usd:.6f}"
         )
-        
+
         # Store in database
         self._store_cost_record(
             operation=operation,
@@ -198,7 +198,7 @@ class OpenRouterResource(ConfigurableResource):
     ):
         """Store cost record in PostgreSQL."""
         import psycopg2
-        
+
         conn = psycopg2.connect(
             host=os.getenv("POSTGRES_HOST", "localhost"),
             port=int(os.getenv("POSTGRES_PORT", "5432")),
@@ -207,11 +207,11 @@ class OpenRouterResource(ConfigurableResource):
             dbname=os.getenv("POSTGRES_DB", "talent_matching"),
         )
         cursor = conn.cursor()
-        
+
         cursor.execute(
             """
-            INSERT INTO llm_costs 
-            (run_id, asset_key, partition_key, operation, model, 
+            INSERT INTO llm_costs
+            (run_id, asset_key, partition_key, operation, model,
              input_tokens, output_tokens, cost_usd, code_version)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
@@ -227,7 +227,7 @@ class OpenRouterResource(ConfigurableResource):
                 self._code_version or None,
             ),
         )
-        
+
         conn.commit()
         cursor.close()
         conn.close()
@@ -241,7 +241,7 @@ class OpenRouterResource(ConfigurableResource):
     ) -> dict[str, Any]:
         """Make a completion request and track costs."""
         model = model or self.default_model
-        
+
         response = httpx.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -257,16 +257,16 @@ class OpenRouterResource(ConfigurableResource):
         )
         response.raise_for_status()
         data = response.json()
-        
+
         # Extract usage
         usage = data.get("usage", {})
         input_tokens = usage.get("prompt_tokens", 0)
         output_tokens = usage.get("completion_tokens", 0)
-        
+
         # Calculate and log cost
         cost_usd = self._calculate_cost(model, input_tokens, output_tokens)
         self._log_cost(operation, model, input_tokens, output_tokens, cost_usd)
-        
+
         return data
 
     def normalize_cv(self, raw_cv_text: str) -> dict[str, Any]:
@@ -280,7 +280,7 @@ class OpenRouterResource(ConfigurableResource):
             operation="normalize_cv",
             response_format={"type": "json_object"},
         )
-        
+
         import json
         return json.loads(response["choices"][0]["message"]["content"])
 
@@ -295,7 +295,7 @@ class OpenRouterResource(ConfigurableResource):
             operation="normalize_job",
             response_format={"type": "json_object"},
         )
-        
+
         import json
         return json.loads(response["choices"][0]["message"]["content"])
 
@@ -309,7 +309,7 @@ class OpenRouterResource(ConfigurableResource):
             model="openai/gpt-4o",  # Better model for reasoning
             operation="score_candidate",
         )
-        
+
         import json
         return json.loads(response["choices"][0]["message"]["content"])
 ```
@@ -329,7 +329,7 @@ def normalized_candidates(
     raw_candidates: dict,
 ) -> dict:
     """Normalize candidate with cost tracking."""
-    
+
     # Set context for cost tracking
     llm.set_context(
         run_id=context.run_id,
@@ -337,7 +337,7 @@ def normalized_candidates(
         partition_key=context.partition_key,
         code_version="1.0.0",
     )
-    
+
     # This call is now automatically tracked
     return llm.normalize_cv(raw_candidates["raw_text"])
 ```
@@ -370,7 +370,7 @@ def get_avg_cost_per_partition(
     """Get average cost per partition from historical data."""
     conn = psycopg2.connect(...)
     cursor = conn.cursor()
-    
+
     if code_version:
         # Get cost for specific code version
         cursor.execute(
@@ -389,21 +389,21 @@ def get_avg_cost_per_partition(
             FROM llm_costs
             WHERE asset_key = %s
             AND code_version = (
-                SELECT code_version FROM llm_costs 
-                WHERE asset_key = %s 
+                SELECT code_version FROM llm_costs
+                WHERE asset_key = %s
                 ORDER BY created_at DESC LIMIT 1
             )
             """,
             (asset_key, asset_key),
         )
-    
+
     result = cursor.fetchone()
     cursor.close()
     conn.close()
-    
+
     avg_cost = Decimal(str(result[0])) if result[0] else Decimal("0")
     sample_count = result[1] or 0
-    
+
     return avg_cost, sample_count
 
 
@@ -413,11 +413,11 @@ def estimate_run_cost(
 ) -> list[CostEstimate]:
     """Estimate cost for running stale assets."""
     estimates = []
-    
+
     for asset_key in stale_assets:
         partition_count = partition_counts.get(asset_key, 1)
         avg_cost, sample_count = get_avg_cost_per_partition(asset_key)
-        
+
         # Determine confidence based on sample size
         if sample_count >= 100:
             confidence = "high"
@@ -425,7 +425,7 @@ def estimate_run_cost(
             confidence = "medium"
         else:
             confidence = "low"
-        
+
         estimates.append(CostEstimate(
             asset_key=asset_key,
             partition_count=partition_count,
@@ -433,7 +433,7 @@ def estimate_run_cost(
             estimated_total=avg_cost * partition_count,
             confidence=confidence,
         ))
-    
+
     return estimates
 
 
@@ -442,12 +442,12 @@ def estimate_code_change_cost(
     new_code_version: str,
 ) -> dict:
     """Estimate cost of changing an asset's code version.
-    
+
     When code version changes, ALL partitions become stale.
     """
     conn = psycopg2.connect(...)
     cursor = conn.cursor()
-    
+
     # Count total partitions for this asset
     cursor.execute(
         """
@@ -458,15 +458,15 @@ def estimate_code_change_cost(
         (changed_asset,),
     )
     partition_count = cursor.fetchone()[0] or 0
-    
+
     # Get average cost per partition
     avg_cost, _ = get_avg_cost_per_partition(changed_asset)
-    
+
     # Get downstream assets that would also re-run
     downstream = get_downstream_assets(changed_asset)
-    
+
     total_estimate = avg_cost * partition_count
-    
+
     # Add downstream costs
     downstream_estimates = []
     for downstream_asset in downstream:
@@ -477,10 +477,10 @@ def estimate_code_change_cost(
             "asset": downstream_asset,
             "estimated_cost": float(ds_cost),
         })
-    
+
     cursor.close()
     conn.close()
-    
+
     return {
         "changed_asset": changed_asset,
         "partition_count": partition_count,
@@ -506,23 +506,23 @@ from talent_matching.utils.cost_estimator import estimate_code_change_cost
 def estimate(asset: str, version: str):
     """Estimate cost of a code change before deploying."""
     result = estimate_code_change_cost(asset, version)
-    
+
     click.echo(f"\n{'='*50}")
     click.echo(f"COST ESTIMATE: {asset} → v{version}")
     click.echo(f"{'='*50}\n")
-    
+
     click.echo(f"Partitions affected: {result['partition_count']}")
     click.echo(f"Direct cost: ${result['direct_cost']:.2f}")
-    
+
     if result['downstream_assets']:
         click.echo(f"\nDownstream cascade:")
         for ds in result['downstream_assets']:
             click.echo(f"  • {ds['asset']}: ${ds['estimated_cost']:.2f}")
-    
+
     click.echo(f"\n{'─'*50}")
     click.echo(f"TOTAL ESTIMATED COST: ${result['total_estimated_cost']:.2f}")
     click.echo(f"{'─'*50}\n")
-    
+
     if result.get('warning'):
         click.echo(f"⚠️  {result['warning']}\n")
 
@@ -562,7 +562,7 @@ python -m talent_matching.cli.estimate_costs \
 
 ```sql
 -- Cost by asset (last 30 days)
-SELECT 
+SELECT
     asset_key,
     SUM(cost_usd) as total_cost,
     COUNT(*) as call_count,
@@ -573,7 +573,7 @@ GROUP BY asset_key
 ORDER BY total_cost DESC;
 
 -- Cost by code version (track impact of changes)
-SELECT 
+SELECT
     asset_key,
     code_version,
     SUM(cost_usd) as total_cost,
@@ -585,7 +585,7 @@ GROUP BY asset_key, code_version
 ORDER BY asset_key, first_used DESC;
 
 -- Daily cost trend
-SELECT 
+SELECT
     DATE(created_at) as date,
     SUM(cost_usd) as daily_cost,
     COUNT(*) as calls

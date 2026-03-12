@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 # - MAJOR: Breaking changes to output schema
 # - MINOR: New fields or significant prompt improvements
 # - PATCH: Minor wording tweaks or bug fixes
-PROMPT_VERSION = "3.7.0"  # v3.7.0: validate required job text before building prompt
+PROMPT_VERSION = "3.8.0"  # v3.8.0: job_category from allowed candidate taxonomy for matchmaking
 
 # Default model for job normalization (cost-effective for extraction)
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -31,6 +31,7 @@ Output a single JSON object with this structure (use null when not mentioned):
 {
   "title": "Job title in English (translate if the posting is in another language)",
   "company_name": "Company name if mentioned",
+  "job_category": "Single string: role family for matchmaking. When the user message provides a list of allowed job categories, output exactly one of those strings (the best fit). Otherwise infer a short label or null.",
   "seniority_level": "JUNIOR|MID|SENIOR|STAFF|LEAD|PRINCIPAL|EXECUTIVE",
   "employment_type": ["full-time", "part-time"] (array: list every type offered; infer from 'Vollzeit/Teilzeit', 'full or part time'; use ["full-time", "part-time"] when both offered)",
   "requirements": {
@@ -100,7 +101,9 @@ Apply to must_have_skills and nice_to_have_skills. tech_stack remains a simple a
 
 **Timezone requirements:** Extract timezone constraints from phrases like "US time zones", "European hours", "EST to CET overlap". Convert named timezones to UTC offset ranges (e.g. "US time zones" -> "UTC-10 to UTC-5", "European hours" -> "UTC+0 to UTC+3"). Use null when no timezone constraint is mentioned. For remote roles, infer from context if possible (e.g. company HQ location, meeting overlap requirements).
 
-**Job title:** Use English. If the posting is in another language (e.g. German "Frontend-Entwickler"), output the English equivalent (e.g. "Frontend Developer")."""
+**Job title:** Use English. If the posting is in another language (e.g. German "Frontend-Entwickler"), output the English equivalent (e.g. "Frontend Developer").
+
+**Job category (matchmaking):** When the user message includes "Allowed job categories", you MUST set job_category to exactly one of those strings (the one that best fits the role). Use the exact string from the list so that candidates who have that category in their desired_job_categories will be eligible for this job. If no allowed list is provided, infer a short role-family label or use null."""
 
 SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace(
     "{proficiency_scale}", proficiency_scale_for_prompt()
@@ -140,6 +143,7 @@ def _build_user_prompt(
     projected_salary: str | None = None,
     job_category_raw: str | None = None,
     experience_level_raw: str | None = None,
+    allowed_job_categories: list[str] | None = None,
 ) -> str:
     raw_job_text = require_meaningful_text(
         raw_job_text,
@@ -191,6 +195,15 @@ def _build_user_prompt(
                 "Use this to infer seniority_level when supported by the job description."
             )
 
+    if allowed_job_categories:
+        parts.append(
+            "\n\n--- ALLOWED JOB CATEGORIES (for matchmaking) ---\n"
+            "Candidates are matched only when the job's job_category equals one of their desired categories. "
+            "Set job_category to exactly one of the following strings (the best fit for this role):\n"
+            + ", ".join(f'"{c}"' for c in allowed_job_categories)
+            + "\nUse the exact string from this list. If none fit well, choose the closest."
+        )
+
     return "\n".join(parts)
 
 
@@ -204,6 +217,7 @@ async def normalize_job(
     projected_salary: str | None = None,
     job_category_raw: str | None = None,
     experience_level_raw: str | None = None,
+    allowed_job_categories: list[str] | None = None,
 ) -> NormalizeJobResult:
     """Normalize a job description into structured format using LLM.
 
@@ -216,6 +230,8 @@ async def normalize_job(
         projected_salary: Recruiter-specified salary range (e.g. "$120,000 - $170,000")
         job_category_raw: Recruiter-provided role category / family label
         experience_level_raw: Recruiter-provided level / seniority hint
+        allowed_job_categories: Distinct desired_job_categories from candidates; LLM must
+            output job_category as exactly one of these for matchmaking alignment.
 
     Returns:
         NormalizeJobResult with data, usage stats, and model for metadata
@@ -229,6 +245,7 @@ async def normalize_job(
         projected_salary,
         job_category_raw,
         experience_level_raw,
+        allowed_job_categories,
     )
     response = await openrouter.complete(
         messages=[

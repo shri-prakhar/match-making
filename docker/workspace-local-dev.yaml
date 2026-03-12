@@ -1,0 +1,6 @@
+# Workspace for local-matchmaking: load module with location_name "talent_matching"
+# so runs match the same location name used by remote-ui (grpc) and remote daemon.
+load_from:
+  - python_module:
+      module_name: talent_matching.definitions
+      location_name: talent_matching
