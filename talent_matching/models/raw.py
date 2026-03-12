@@ -65,6 +65,9 @@ class RawCandidate(Base):
         Text, nullable=True
     )  # Lead, Fraud, Hired, etc.
 
+    # Hash of NORMALIZATION_INPUT_FIELDS for sensor: skip retrigger when only (N) columns changed
+    normalization_input_hash: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     # Timestamps
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

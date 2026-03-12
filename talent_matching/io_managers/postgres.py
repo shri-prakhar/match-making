@@ -43,7 +43,10 @@ from talent_matching.models.skills import Skill
 from talent_matching.models.vectors import CandidateVector
 from talent_matching.services.timezone_resolver import resolve_candidate_timezone
 from talent_matching.skills.resolver import get_or_create_skill
-from talent_matching.utils.airtable_mapper import parse_comma_separated
+from talent_matching.utils.airtable_mapper import (
+    compute_normalization_input_hash,
+    parse_comma_separated,
+)
 
 
 def _parse_employment_type(value: Any) -> EmploymentTypeEnum | None:
@@ -396,6 +399,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             "work_experience_raw": _serialize_for_text(data.get("work_experience_raw")),
             "job_status_raw": _serialize_for_text(data.get("job_status_raw")),
             "processing_status": ProcessingStatusEnum.PENDING,
+            "normalization_input_hash": compute_normalization_input_hash(data),
         }
 
         # Use PostgreSQL upsert (INSERT ... ON CONFLICT DO UPDATE)
@@ -419,6 +423,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
                 "github_url": stmt.excluded.github_url,
                 "work_experience_raw": stmt.excluded.work_experience_raw,
                 "job_status_raw": stmt.excluded.job_status_raw,
+                "normalization_input_hash": stmt.excluded.normalization_input_hash,
             },
         )
 

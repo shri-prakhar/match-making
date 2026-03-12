@@ -8,10 +8,17 @@ from dagster import ConfigurableResource
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from talent_matching.config.scoring import (
+    ScoringWeights,
+    default_weights_dict,
+    get_weights_for_job_category,
+)
 from talent_matching.db import get_session
 from talent_matching.models.candidates import CandidateSkill, NormalizedCandidate
 from talent_matching.models.enums import RequirementTypeEnum
 from talent_matching.models.jobs import JobRequiredSkill, NormalizedJob
+from talent_matching.models.raw import RawCandidate
+from talent_matching.models.scoring_weights import ScoringWeightsRecord
 from talent_matching.models.skills import Skill
 from talent_matching.models.vectors import CandidateVector
 from talent_matching.skills.resolver import get_or_create_skill, load_alias_map
@@ -34,12 +41,23 @@ class MatchmakingResource(ConfigurableResource):
             return None
         session = self._get_session()
         row = session.execute(
-            select(NormalizedJob.id).where(
-                NormalizedJob.airtable_record_id == airtable_record_id
-            )
+            select(NormalizedJob.id).where(NormalizedJob.airtable_record_id == airtable_record_id)
         ).scalar_one_or_none()
         session.close()
         return str(row) if row else None
+
+    def get_normalization_input_hash(self, airtable_record_id: str) -> str | None:
+        """Return RawCandidate.normalization_input_hash for sensor skip logic, or None."""
+        if not airtable_record_id:
+            return None
+        session = self._get_session()
+        row = session.execute(
+            select(RawCandidate.normalization_input_hash).where(
+                RawCandidate.airtable_record_id == airtable_record_id
+            )
+        ).scalar_one_or_none()
+        session.close()
+        return row
 
     def get_job_required_skills(
         self,
@@ -235,6 +253,29 @@ class MatchmakingResource(ConfigurableResource):
         session.close()
         return job
 
+    def get_allowed_job_categories(self) -> list[str]:
+        """Return distinct desired_job_categories from normalized_candidates for use in job normalization.
+
+        Used so the LLM can output job_category as exactly one of these values, enabling
+        matchmaking filter alignment (job_category in candidate desired_job_categories).
+        """
+        session = self._get_session()
+        rows = session.execute(
+            select(NormalizedCandidate.desired_job_categories).where(
+                NormalizedCandidate.desired_job_categories.isnot(None)
+            )
+        ).all()
+        session.close()
+        seen: set[str] = set()
+        for (arr,) in rows:
+            if not arr:
+                continue
+            for v in arr:
+                s = (v or "").strip()
+                if s:
+                    seen.add(s)
+        return sorted(seen)
+
     def update_normalized_job_from_airtable(
         self, airtable_record_id: str, fields: dict[str, Any]
     ) -> bool:
@@ -298,3 +339,65 @@ class MatchmakingResource(ConfigurableResource):
 
         session.close()
         return True
+
+    def get_or_create_weights_for_job_category(self, job_category: str | None) -> ScoringWeights:
+        """Return scoring weights for the job category, from DB or default.
+
+        If job_category is missing or blank, returns the in-memory default weights.
+        Otherwise looks up scoring_weights by job_category; if no row exists,
+        inserts a new record with default weights and returns them. This ensures
+        every job category seen in the pipeline has a stored weights record.
+        """
+        key = (job_category or "").strip()
+        if not key:
+            return get_weights_for_job_category(None)
+
+        session = self._get_session()
+        row = session.execute(
+            select(ScoringWeightsRecord).where(ScoringWeightsRecord.job_category == key)
+        ).scalar_one_or_none()
+        if row is not None:
+            weights = ScoringWeights(
+                role_weight=row.role_weight,
+                domain_weight=row.domain_weight,
+                culture_weight=row.culture_weight,
+                impact_weight=row.impact_weight,
+                technical_weight=row.technical_weight,
+                vector_weight=row.vector_weight,
+                skill_fit_weight=row.skill_fit_weight,
+                compensation_weight=row.compensation_weight,
+                location_weight=row.location_weight,
+                seniority_scale_weight=row.seniority_scale_weight,
+                skill_rating_weight=row.skill_rating_weight,
+                skill_semantic_weight=row.skill_semantic_weight,
+                seniority_max_deduction=row.seniority_max_deduction,
+                seniority_level_max_deduction=row.seniority_level_max_deduction,
+                tenure_instability_max_deduction=row.tenure_instability_max_deduction,
+            )
+            session.close()
+            return weights
+
+        defaults = default_weights_dict()
+        session.add(
+            ScoringWeightsRecord(
+                job_category=key,
+                role_weight=defaults["role_weight"],
+                domain_weight=defaults["domain_weight"],
+                culture_weight=defaults["culture_weight"],
+                impact_weight=defaults["impact_weight"],
+                technical_weight=defaults["technical_weight"],
+                vector_weight=defaults["vector_weight"],
+                skill_fit_weight=defaults["skill_fit_weight"],
+                compensation_weight=defaults["compensation_weight"],
+                location_weight=defaults["location_weight"],
+                seniority_scale_weight=defaults["seniority_scale_weight"],
+                skill_rating_weight=defaults["skill_rating_weight"],
+                skill_semantic_weight=defaults["skill_semantic_weight"],
+                seniority_max_deduction=defaults["seniority_max_deduction"],
+                seniority_level_max_deduction=defaults["seniority_level_max_deduction"],
+                tenure_instability_max_deduction=defaults["tenure_instability_max_deduction"],
+            )
+        )
+        session.commit()
+        session.close()
+        return get_weights_for_job_category(None)

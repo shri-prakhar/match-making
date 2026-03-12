@@ -15,6 +15,8 @@ import pytest
 from talent_matching.resources.airtable import AirtableATSResource, AirtableResource
 from talent_matching.utils.airtable_mapper import (
     AIRTABLE_CANDIDATES_WRITEBACK_FIELDS,
+    NORMALIZATION_INPUT_FIELDS,
+    compute_normalization_input_hash,
     extract_cv_url,
     map_airtable_row_to_raw_candidate,
     normalized_candidate_to_airtable_fields,
@@ -98,6 +100,61 @@ class TestParseCommaSeparated:
         """Test that empty string returns empty list."""
         result = parse_comma_separated("")
         assert result == []
+
+
+class TestNormalizationInputHash:
+    """Tests for NORMALIZATION_INPUT_FIELDS and compute_normalization_input_hash (sensor skip logic)."""
+
+    def test_normalization_input_fields_excludes_job_status(self):
+        """NORMALIZATION_INPUT_FIELDS must not include job_status_raw (not used in normalization)."""
+        assert "job_status_raw" not in NORMALIZATION_INPUT_FIELDS
+
+    def test_normalization_input_fields_are_raw_inputs_only(self):
+        """NORMALIZATION_INPUT_FIELDS are exactly the raw fields that feed the normalization LLM."""
+        # From normalized_candidates asset: cv_text_airtable + cv_url (for PDF) + cv_text (Airtable)
+        expected = {
+            "full_name",
+            "professional_summary",
+            "skills_raw",
+            "work_experience_raw",
+            "cv_text",
+            "location_raw",
+            "proof_of_work",
+            "desired_job_categories_raw",
+            "salary_range_raw",
+            "github_url",
+            "linkedin_url",
+            "x_profile_url",
+            "earn_profile_url",
+            "cv_url",
+        }
+        assert set(NORMALIZATION_INPUT_FIELDS) == expected
+
+    def test_hash_stable_for_same_input(self):
+        """Same dict produces same hash."""
+        record = {"full_name": "Jane", "skills_raw": "Python", "cv_url": "https://x.com/cv.pdf"}
+        h1 = compute_normalization_input_hash(record)
+        h2 = compute_normalization_input_hash(record)
+        assert h1 == h2
+        assert len(h1) == 16
+        assert all(c in "0123456789abcdef" for c in h1)
+
+    def test_hash_ignores_extra_keys(self):
+        """Adding keys not in NORMALIZATION_INPUT_FIELDS does not change hash."""
+        record = {"full_name": "Jane", "skills_raw": "Python"}
+        h1 = compute_normalization_input_hash(record)
+        record["(N) Full Name"] = "Jane Doe"  # write-back column
+        record["_data_version"] = "abc123"
+        h2 = compute_normalization_input_hash(record)
+        assert h1 == h2
+
+    def test_hash_changes_when_input_field_changes(self):
+        """Changing any normalization input field changes the hash."""
+        record = {"full_name": "Jane", "skills_raw": "Python"}
+        h1 = compute_normalization_input_hash(record)
+        record["skills_raw"] = "Python,Rust"
+        h2 = compute_normalization_input_hash(record)
+        assert h1 != h2
 
 
 class TestMapAirtableRowToRawCandidate:

@@ -17,13 +17,14 @@ from dagster import (
 
 from talent_matching.assets.candidates import candidate_partitions
 from talent_matching.jobs import candidate_pipeline_job
+from talent_matching.utils.airtable_mapper import compute_normalization_input_hash
 
 
 @sensor(
     job=candidate_pipeline_job,
     minimum_interval_seconds=900,  # Check every 15 minutes (Airtable API is slow ~20s per full poll)
     description="Polls Airtable for new or updated candidate records using incremental sync",
-    required_resource_keys={"airtable"},
+    required_resource_keys={"airtable", "matchmaking"},
 )
 def airtable_candidate_sensor(
     context: SensorEvaluationContext,
@@ -112,26 +113,26 @@ def airtable_candidate_sensor(
             context.update_cursor(new_cursor)
             return SkipReason(f"No changes since {last_sync}")
 
-        # Separate new vs updated records
-        new_records = []
-        updated_records = []
+        # Separate new vs updated (keep full record for updated to compute hash)
+        new_record_ids = []
+        updated_records_with_data = []
 
         for record in modified_records:
             record_id = record.get("airtable_record_id")
             if record_id in existing_partitions:
-                updated_records.append(record_id)
+                updated_records_with_data.append(record)
             else:
-                new_records.append(record_id)
+                new_record_ids.append(record_id)
 
         context.log.info(
-            f"New records: {len(new_records)}, Updated records: {len(updated_records)}"
+            f"New records: {len(new_record_ids)}, Updated records: {len(updated_records_with_data)}"
         )
 
         # Add new partitions
-        if new_records:
+        if new_record_ids:
             context.instance.add_dynamic_partitions(
                 partitions_def_name=partitions_name,
-                partition_keys=new_records,
+                partition_keys=new_record_ids,
             )
 
         # Update cursor
@@ -143,15 +144,26 @@ def airtable_candidate_sensor(
         )
         context.update_cursor(new_cursor)
 
-        # Yield run requests for all modified records (new + updated)
-        for record_id in new_records:
+        matchmaking = context.resources.matchmaking
+
+        # Yield run requests for new records (no hash check)
+        for record_id in new_record_ids:
             context.log.info(f"Triggering pipeline for NEW candidate: {record_id}")
             yield RunRequest(
                 run_key=f"candidate-new-{record_id}-{current_sync_time}",
                 partition_key=record_id,
             )
 
-        for record_id in updated_records:
+        # For updated records: only yield if normalization inputs changed (skip when only (N) write-back)
+        for record in updated_records_with_data:
+            record_id = record.get("airtable_record_id")
+            current_hash = compute_normalization_input_hash(record)
+            stored_hash = matchmaking.get_normalization_input_hash(record_id)
+            if stored_hash is not None and current_hash == stored_hash:
+                context.log.info(
+                    f"Skipping {record_id}: normalization inputs unchanged (hash match)"
+                )
+                continue
             context.log.info(f"Triggering pipeline for UPDATED candidate: {record_id}")
             yield RunRequest(
                 run_key=f"candidate-update-{record_id}-{current_sync_time}",

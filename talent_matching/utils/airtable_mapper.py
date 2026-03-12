@@ -5,12 +5,45 @@ internal data model. These are used by the AirtableResource but can also
 be used independently for testing and data transformation.
 """
 
+import hashlib
 import re
 from datetime import datetime
 from typing import Any, cast
 
 # Prefix for normalized candidate columns when writing back to Airtable
 NORMALIZED_COLUMN_PREFIX = "(N) "
+
+# RawCandidate fields that feed into the normalization LLM (candidate_pipeline sensor
+# uses a hash of only these to avoid retriggering when only (N) write-back columns change).
+NORMALIZATION_INPUT_FIELDS = [
+    "full_name",
+    "professional_summary",
+    "skills_raw",
+    "work_experience_raw",
+    "cv_text",
+    "location_raw",
+    "proof_of_work",
+    "desired_job_categories_raw",
+    "salary_range_raw",
+    "github_url",
+    "linkedin_url",
+    "x_profile_url",
+    "earn_profile_url",
+    "cv_url",
+]
+
+
+def compute_normalization_input_hash(mapped_record: dict[str, Any]) -> str:
+    """Hash only the RawCandidate fields that feed into normalization.
+
+    Used by the candidate pipeline sensor to skip runs when the only change
+    was (N) write-back or other non-input columns. Same serialization as
+    AirtableResource._compute_record_hash for stability.
+    """
+    content = {k: mapped_record.get(k) for k in NORMALIZATION_INPUT_FIELDS}
+    content_str = str(sorted(content.items()))
+    return hashlib.sha256(content_str.encode()).hexdigest()[:16]
+
 
 # Syncable NormalizedCandidate fields (exclude id, airtable_record_id, raw_candidate_id, verified_by, normalized_json)
 NORMALIZED_CANDIDATE_SYNCABLE_FIELDS = [
