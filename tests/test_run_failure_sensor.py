@@ -26,3 +26,12 @@ def test_classify_missing_desired_job_category():
         "Candidate has no desired job category ..."
     )
     assert "MISSING_DESIRED_JOB_CATEGORY" in tags
+
+
+def test_classify_insufficient_cv_data():
+    """InsufficientCvDataError gets INSUFFICIENT_CV_DATA tag (not UNKNOWN_FAILURE)."""
+    tags = _classify_failure(
+        "InsufficientCvDataError: [normalized_candidates] record_id=recX No CV data: "
+        "total_cv_length=120 < 500. ..."
+    )
+    assert "INSUFFICIENT_CV_DATA" in tags

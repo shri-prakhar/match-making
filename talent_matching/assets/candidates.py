@@ -41,6 +41,7 @@ from talent_matching.utils.airtable_mapper import (
 )
 from talent_matching.utils.dagster_async import run_with_interrupt_check
 from talent_matching.utils.llm_text_validation import (
+    InsufficientCvDataError,
     InsufficientNarrativeDataError,
     MissingDesiredJobCategoryError,
     require_meaningful_text_fields,
@@ -255,7 +256,7 @@ _NORMALIZED_CANDIDATES_RETRY_POLICY = RetryPolicy(max_retries=0)
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="postgres_io",
-    code_version="2.5.0",  # v2.5.0: MIN_CV_CONTENT_LENGTH 500 for no_cv_data sentinel
+    code_version="2.6.0",  # v2.6.0: raise InsufficientCvDataError when total_cv_length < 500 (no sentinel)
     retry_policy=_NORMALIZED_CANDIDATES_RETRY_POLICY,
     op_tags={
         "dagster/concurrency_key": "openrouter_api",
@@ -334,26 +335,11 @@ def normalized_candidates(
     has_enough_content = total_cv_length >= MIN_CV_CONTENT_LENGTH
 
     if not has_enough_content:
-        context.log.warning(
-            f"[normalized_candidates] record_id={record_id} No CV data (total_cv_length={total_cv_length} < {MIN_CV_CONTENT_LENGTH}); excluding from matchmaking (no LLM, no DB row)"
+        raise InsufficientCvDataError(
+            f"[normalized_candidates] record_id={record_id} No CV data: total_cv_length={total_cv_length} < {MIN_CV_CONTENT_LENGTH}. "
+            "Candidate has insufficient combined content (airtable + PDF) for normalization. "
+            "No retries; run tagged INSUFFICIENT_CV_DATA."
         )
-        context.add_output_metadata(
-            {
-                "llm_cost_usd": 0.0,
-                "llm_tokens_input": 0,
-                "llm_tokens_output": 0,
-                "llm_model": "skipped",
-                "skip_reason": "no_cv_data",
-                "cv_sources": "none",
-            }
-        )
-        # Sentinel: IO manager will delete any existing normalized_candidate + candidate_vectors for this partition
-        return {
-            "__exclude_from_matchmaking__": True,
-            "skip_reason": "no_cv_data",
-            "candidate_id": record_id,
-            "airtable_record_id": raw_candidates.get("airtable_record_id"),
-        }
 
     # Log which sources we're using
     sources = []

@@ -12,6 +12,14 @@ class InsufficientNarrativeDataError(ValueError):
     """
 
 
+class InsufficientCvDataError(ValueError):
+    """Raised when combined CV content (airtable + PDF) is below the minimum length.
+
+    Used by normalized_candidates to fail the step (no retries, specific failure tag)
+    so downstream assets do not run. Do not treat as success with sentinel.
+    """
+
+
 class MissingDesiredJobCategoryError(ValueError):
     """Raised when a candidate has no desired job category (Desired Job Category empty or blank).
 

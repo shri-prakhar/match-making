@@ -53,6 +53,10 @@ KNOWN_FAILURES: list[tuple[str, list[str]]] = [
         "MISSING_DESIRED_JOB_CATEGORY",
         ["MissingDesiredJobCategoryError", "no desired job category"],
     ),
+    (
+        "INSUFFICIENT_CV_DATA",
+        ["InsufficientCvDataError", "No CV data", "total_cv_length"],
+    ),
 ]
 
 
