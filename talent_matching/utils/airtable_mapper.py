@@ -6,6 +6,7 @@ be used independently for testing and data transformation.
 """
 
 import hashlib
+import json
 import re
 from datetime import datetime
 from typing import Any, cast
@@ -211,6 +212,31 @@ def extract_cv_url(cv_field: Any) -> str | None:
             return cv_field
 
     return None
+
+
+def is_airtable_error_value(value: Any) -> bool:
+    """Return True if value is an Airtable formula/link error payload (treat as empty).
+
+    Airtable can return formula or lookup fields as JSON like
+    {"state": "error", "errorType": "emptyDependency", "value": null, "isStale": false}
+    when a linked record is missing or the formula fails. We treat these as empty
+    so they are not used as real content (e.g. work experience).
+    """
+    if value is None:
+        return False
+    if isinstance(value, dict):
+        return value.get("state") == "error" and "errorType" in value
+    if isinstance(value, str) and value.strip().startswith("{"):
+        try:
+            parsed = json.loads(value)
+            return (
+                isinstance(parsed, dict)
+                and parsed.get("state") == "error"
+                and "errorType" in parsed
+            )
+        except (json.JSONDecodeError, TypeError):
+            return False
+    return False
 
 
 def parse_comma_separated(field_value: str | None) -> list[str]:
@@ -470,6 +496,9 @@ def map_airtable_row_to_raw_candidate(
         "source_id": record.get("id"),
     }
 
+    # Fields that may contain Airtable formula/link error payloads; treat as empty
+    airtable_errorable_fields = frozenset({"work_experience_raw"})
+
     # Map each Airtable column to our model field
     for airtable_col, model_field in column_mapping.items():
         value = fields.get(airtable_col)
@@ -477,6 +506,8 @@ def map_airtable_row_to_raw_candidate(
         # Apply field-specific transformations
         if model_field == "cv_url":
             value = extract_cv_url(value)
+        if model_field in airtable_errorable_fields and is_airtable_error_value(value):
+            value = None
 
         mapped[model_field] = value
 

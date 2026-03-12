@@ -18,6 +18,7 @@ from talent_matching.utils.airtable_mapper import (
     NORMALIZATION_INPUT_FIELDS,
     compute_normalization_input_hash,
     extract_cv_url,
+    is_airtable_error_value,
     map_airtable_row_to_raw_candidate,
     normalized_candidate_to_airtable_fields,
     parse_comma_separated,
@@ -71,6 +72,36 @@ class TestExtractCvUrl:
         cv_field = "  https://example.com/cv.pdf  "
         result = extract_cv_url(cv_field)
         assert result == "https://example.com/cv.pdf"
+
+
+class TestIsAirtableErrorValue:
+    """Tests for Airtable formula/link error payload detection."""
+
+    def test_empty_dependency_string(self):
+        """emptyDependency error as string (e.g. from API) is detected."""
+        value = (
+            '{"state": "error", "errorType": "emptyDependency", "value": null, "isStale": false}'
+        )
+        assert is_airtable_error_value(value) is True
+
+    def test_empty_dependency_dict(self):
+        """emptyDependency error as dict is detected."""
+        value = {"state": "error", "errorType": "emptyDependency", "value": None}
+        assert is_airtable_error_value(value) is True
+
+    def test_normal_string_not_detected(self):
+        """Normal text is not treated as error."""
+        assert is_airtable_error_value("Real work experience here.") is False
+        assert is_airtable_error_value("") is False
+        assert is_airtable_error_value(None) is False
+
+    def test_valid_json_not_error_not_detected(self):
+        """JSON that is not an error payload is not detected."""
+        assert is_airtable_error_value('{"key": "value"}') is False
+
+    def test_invalid_json_string_not_detected(self):
+        """Malformed JSON string is not treated as error (no crash)."""
+        assert is_airtable_error_value("{ not valid json") is False
 
 
 class TestParseCommaSeparated:
@@ -231,6 +262,19 @@ class TestMapAirtableRowToRawCandidate:
         assert result["linkedin_url"] == "https://linkedin.com/in/profile"
         assert result["github_url"] == "https://github.com/profile"
         assert result["earn_profile_url"] == "https://earn.superteam.fun/profile"
+
+    def test_work_experience_airtable_error_mapped_to_none(self):
+        """Work Experience formula/link error payload is mapped to None (not stored as content)."""
+        record = {
+            "id": "rec95yW2hzAVnQuMX",
+            "fields": {
+                "Full Name": "Mike Hukiewitz",
+                "Work Experience": '{"state": "error", "errorType": "emptyDependency", "value": null, "isStale": false}',
+            },
+        }
+        result = map_airtable_row_to_raw_candidate(record)
+        assert result["work_experience_raw"] is None
+        assert result["full_name"] == "Mike Hukiewitz"
 
 
 class TestAirtableATSResourceMapRecord:

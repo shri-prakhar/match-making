@@ -42,12 +42,16 @@ from talent_matching.utils.airtable_mapper import (
 from talent_matching.utils.dagster_async import run_with_interrupt_check
 from talent_matching.utils.llm_text_validation import (
     InsufficientNarrativeDataError,
+    MissingDesiredJobCategoryError,
     require_meaningful_text_fields,
 )
 
 # Dynamic partition definition for candidates
 # Each candidate record gets its own partition key (Airtable record ID)
 candidate_partitions = DynamicPartitionsDefinition(name="candidates")
+
+# Minimum character count to treat as real CV content (avoids normalizing name+URLs-only records)
+MIN_CV_CONTENT_LENGTH = 500
 
 
 @asset(
@@ -112,7 +116,7 @@ def airtable_candidates(context: AssetExecutionContext) -> Output[dict[str, Any]
     group_name="candidates",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter"},
-    code_version="1.3.0",  # v1.3.0: Handle PDF extraction failures explicitly
+    code_version="1.4.0",  # v1.4.0: store PDF text whenever non-empty; combined length only in normalized_candidates
     op_tags={
         "dagster/concurrency_key": "openrouter_api",
     },
@@ -180,7 +184,7 @@ def raw_candidates(
             context.log.warning(
                 f"[raw_candidates] record_id={record_id} PDF extraction failed: {result.error}"
             )
-        elif result.text and len(result.text.strip()) > 50:
+        elif result.text and result.text.strip():
             cv_text_pdf = result.text
             cv_extraction_method = "pdf_text"
             context.log.info(
@@ -190,7 +194,7 @@ def raw_candidates(
         else:
             cv_extraction_method = "failed"
             context.log.warning(
-                f"[raw_candidates] record_id={record_id} PDF extraction returned empty/short text"
+                f"[raw_candidates] record_id={record_id} PDF extraction returned empty text"
             )
 
         extraction_metadata: dict[str, Any] = {
@@ -224,8 +228,8 @@ def raw_candidates(
         "cv_extraction_pages": cv_extraction_pages,
     }
 
-    has_airtable = bool(cv_text_airtable and len(cv_text_airtable.strip()) > 50)
-    has_pdf = bool(cv_text_pdf and len(cv_text_pdf.strip()) > 50)
+    has_airtable = bool(cv_text_airtable and cv_text_airtable.strip())
+    has_pdf = bool(cv_text_pdf and cv_text_pdf.strip())
     sources = []
     if has_airtable:
         sources.append("airtable")
@@ -251,7 +255,7 @@ _NORMALIZED_CANDIDATES_RETRY_POLICY = RetryPolicy(max_retries=0)
     group_name="candidates",
     required_resource_keys={"openrouter"},
     io_manager_key="postgres_io",
-    code_version="2.3.0",  # v2.3.0: fail at normalization when narratives empty (InsufficientNarrativeDataError)
+    code_version="2.5.0",  # v2.5.0: MIN_CV_CONTENT_LENGTH 500 for no_cv_data sentinel
     retry_policy=_NORMALIZED_CANDIDATES_RETRY_POLICY,
     op_tags={
         "dagster/concurrency_key": "openrouter_api",
@@ -322,13 +326,16 @@ def normalized_candidates(
     # Get PDF-extracted text (separate source)
     cv_text_pdf = raw_candidates.get("cv_text_pdf")
 
-    # Check if we have any content
-    has_airtable = cv_text_airtable and len(cv_text_airtable.strip()) > 50
-    has_pdf = cv_text_pdf and len(cv_text_pdf.strip()) > 50
+    # Combined length of all raw fields + PDF: must exceed threshold before we do any normalization.
+    # If not, stop here — no LLM call, no normalized row, no matchmaking.
+    airtable_len = len((cv_text_airtable or "").strip())
+    pdf_len = len((cv_text_pdf or "").strip())
+    total_cv_length = airtable_len + pdf_len
+    has_enough_content = total_cv_length >= MIN_CV_CONTENT_LENGTH
 
-    if not has_airtable and not has_pdf:
+    if not has_enough_content:
         context.log.warning(
-            f"[normalized_candidates] record_id={record_id} No CV data; excluding from matchmaking (no LLM, no DB row)"
+            f"[normalized_candidates] record_id={record_id} No CV data (total_cv_length={total_cv_length} < {MIN_CV_CONTENT_LENGTH}); excluding from matchmaking (no LLM, no DB row)"
         )
         context.add_output_metadata(
             {
@@ -350,12 +357,13 @@ def normalized_candidates(
 
     # Log which sources we're using
     sources = []
-    if has_airtable:
+    if airtable_len:
         sources.append("airtable")
-    if has_pdf:
+    if pdf_len:
         sources.append("pdf")
     context.log.info(
-        f"[normalized_candidates] record_id={record_id} Normalizing via LLM (sources={', '.join(sources)})"
+        f"[normalized_candidates] record_id={record_id} Normalizing via LLM "
+        f"(total_cv_length={total_cv_length}, sources={', '.join(sources) or 'none'})"
     )
 
     # Fail fast if API key is not configured
@@ -366,10 +374,15 @@ def normalized_candidates(
         )
 
     desired_job_categories = parse_comma_separated(raw_candidates.get("desired_job_categories_raw"))
-    if desired_job_categories:
-        context.log.info(
-            f"[normalized_candidates] record_id={record_id} Using {len(desired_job_categories)} desired_job_categories for category-aware prompt"
+    if not desired_job_categories:
+        raise MissingDesiredJobCategoryError(
+            f"[normalized_candidates] record_id={record_id} Candidate has no desired job category "
+            "(Desired Job Category empty or blank in Airtable). Add at least one role so the candidate "
+            "can be matched to jobs; otherwise they are excluded from normalization and matchmaking."
         )
+    context.log.info(
+        f"[normalized_candidates] record_id={record_id} Using {len(desired_job_categories)} desired_job_categories for category-aware prompt"
+    )
 
     # Run with interrupt check so cancellation in the UI exits the step promptly
     # (avoids runs stuck in CANCELING when blocked on OpenRouter).

@@ -12,6 +12,15 @@ class InsufficientNarrativeDataError(ValueError):
     """
 
 
+class MissingDesiredJobCategoryError(ValueError):
+    """Raised when a candidate has no desired job category (Desired Job Category empty or blank).
+
+    Such candidates are erroneous for matchmaking: we require at least one desired role so that
+    job_category filtering can exclude them from jobs they did not opt into. Fail at normalization
+    so they are not materialized and never included in matchmaking.
+    """
+
+
 def require_meaningful_text(
     value: Any,
     *,

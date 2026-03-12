@@ -49,6 +49,10 @@ KNOWN_FAILURES: list[tuple[str, list[str]]] = [
         "INSUFFICIENT_NARRATIVE_DATA",
         ["InsufficientNarrativeDataError", "experience is empty.; domain is empty"],
     ),
+    (
+        "MISSING_DESIRED_JOB_CATEGORY",
+        ["MissingDesiredJobCategoryError", "no desired job category"],
+    ),
 ]
 
 
