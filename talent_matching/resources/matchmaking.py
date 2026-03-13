@@ -254,27 +254,25 @@ class MatchmakingResource(ConfigurableResource):
         return job
 
     def get_allowed_job_categories(self) -> list[str]:
-        """Return distinct desired_job_categories from normalized_candidates for use in job normalization.
+        """Return canonical job categories from scoring_weights for use in job normalization.
 
         Used so the LLM can output job_category as exactly one of these values, enabling
         matchmaking filter alignment (job_category in candidate desired_job_categories).
+        Uses the same canonical list as matchmaking (scoring_weights), not the union of
+        all candidate desired_job_categories (which can be 100+ due to LLM variation).
         """
         session = self._get_session()
-        rows = session.execute(
-            select(NormalizedCandidate.desired_job_categories).where(
-                NormalizedCandidate.desired_job_categories.isnot(None)
+        rows = (
+            session.execute(
+                select(ScoringWeightsRecord.job_category).order_by(
+                    ScoringWeightsRecord.job_category
+                )
             )
-        ).all()
+            .scalars()
+            .all()
+        )
         session.close()
-        seen: set[str] = set()
-        for (arr,) in rows:
-            if not arr:
-                continue
-            for v in arr:
-                s = (v or "").strip()
-                if s:
-                    seen.add(s)
-        return sorted(seen)
+        return [r for r in rows if r and str(r).strip()]
 
     def update_normalized_job_from_airtable(
         self, airtable_record_id: str, fields: dict[str, Any]

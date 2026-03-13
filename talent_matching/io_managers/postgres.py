@@ -1184,19 +1184,38 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
         """Store match data (list of match dicts) using SQLAlchemy ORM.
 
         Replaces all existing matches for this job: deletes by job_id then inserts
-        the new list (one partition = one job, so all records share the same job_id).
+        the new list (one partition = one job). When records is empty, still deletes
+        existing matches for this partition so stale DB rows are cleared.
         """
-        if not records:
-            context.log.info("No matches to store")
-            return
         session = self._get_session()
-        job_id_raw = records[0].get("job_id")
-        if job_id_raw is not None:
-            job_id = UUID(str(job_id_raw)) if not isinstance(job_id_raw, UUID) else job_id_raw
+        job_id: UUID | None = None
+        if records:
+            job_id_raw = records[0].get("job_id")
+            if job_id_raw is not None:
+                job_id = UUID(str(job_id_raw)) if not isinstance(job_id_raw, UUID) else job_id_raw
+        else:
+            partition_key = getattr(context, "partition_key", None)
+            if partition_key:
+                nj_id = session.execute(
+                    select(NormalizedJob.id).where(
+                        NormalizedJob.airtable_record_id == partition_key
+                    )
+                ).scalar_one_or_none()
+                if nj_id is not None:
+                    job_id = nj_id
+
+        if job_id is not None:
             deleted = session.execute(delete(Match).where(Match.job_id == job_id))
             context.log.info(
                 f"Deleted existing matches for job_id={job_id} (rowcount={deleted.rowcount})"
             )
+
+        if not records:
+            session.commit()
+            session.close()
+            context.log.info("No matches to store (cleared existing for this job)")
+            return
+
         float_keys = {
             "match_score",
             "skills_match_score",

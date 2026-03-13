@@ -230,7 +230,7 @@ async def normalize_job(
         projected_salary: Recruiter-specified salary range (e.g. "$120,000 - $170,000")
         job_category_raw: Recruiter-provided role category / family label
         experience_level_raw: Recruiter-provided level / seniority hint
-        allowed_job_categories: Distinct desired_job_categories from candidates; LLM must
+        allowed_job_categories: Canonical job categories (from scoring_weights); LLM must
             output job_category as exactly one of these for matchmaking alignment.
 
     Returns:

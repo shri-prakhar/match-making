@@ -736,7 +736,8 @@ def location_prefiltered_candidates(
 
 TOP_N_PER_JOB = 30
 ALGORITHM_VERSION = "notion_v3"
-SKILL_MIN_THRESHOLD = 0.30
+# No pre-filter by skill; top 30 by combined score go to refinement; LLM decides who to propose.
+SKILL_MIN_THRESHOLD = 0.0
 
 
 @asset(
@@ -748,7 +749,7 @@ SKILL_MIN_THRESHOLD = 0.30
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.14.0",  # v2.14.0: no candidates scored when job has no job_category (strict gate)
+    code_version="2.15.0",  # v2.15.0: no skill_min threshold; top 30 by combined score, refinement decides
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={
@@ -1106,9 +1107,6 @@ def matches(
 
             cand_timezone = candidate.get("timezone")
             location_match_score = location_score(cand_timezone, job_timezone, job_location_type)
-
-            if skill_fit_score < SKILL_MIN_THRESHOLD:
-                continue
 
             rows.append(
                 (
