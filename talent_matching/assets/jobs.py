@@ -749,7 +749,7 @@ SKILL_MIN_THRESHOLD = 0.0
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.15.0",  # v2.15.0: no skill_min threshold; top 30 by combined score, refinement decides
+    code_version="2.16.0",  # v2.16.0: log job category hard filter (passed/total, desired set, matching category)
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={
@@ -897,7 +897,16 @@ def matches(
         # Per (job, candidate) raw scores; then we rescale vector_score per job
         # Batch vector similarity: filter candidates first, then compute role/domain/culture in one pass.
         # When job has no job_category we exclude all candidates (no matches until job has a category).
+        def _norm_cat(s: str) -> str:
+            s = (s or "").strip()
+            if len(s) >= 2 and s.startswith('"') and s.endswith('"'):
+                s = s[1:-1].strip()
+            return s.lower()
+
+        job_cat_norm = _norm_cat(job_category)
         filtered_candidates: list[tuple[dict[str, Any], str, str]] = []
+        candidates_with_desired = 0
+        candidates_matching_category = 0
         for candidate in normalized_candidates:
             cand_id_norm = candidate.get("id")
             raw_cand_id = str(candidate.get("raw_candidate_id", ""))
@@ -906,10 +915,27 @@ def matches(
             if not job_category:
                 continue
             desired = candidate.get("desired_job_categories") or []
-            desired_normalized = {(c or "").strip().lower() for c in desired if (c or "").strip()}
-            if not desired_normalized or job_category.lower() not in desired_normalized:
+            desired_normalized = {_norm_cat(c) for c in desired if (c or "").strip()}
+            if desired_normalized:
+                candidates_with_desired += 1
+            if job_cat_norm and job_cat_norm in desired_normalized:
+                candidates_matching_category += 1
+            if not desired_normalized or job_cat_norm not in desired_normalized:
                 continue
             filtered_candidates.append((candidate, raw_cand_id, str(cand_id_norm)))
+
+        if job_cat_norm:
+            context.log.info(
+                f"[matches] record_id={record_id} Job category filter "
+                f"{job_category!r}: {len(filtered_candidates)}/{len(normalized_candidates)} candidates "
+                f"({candidates_with_desired} with desired set, {candidates_matching_category} matching category)"
+            )
+            if not filtered_candidates:
+                context.log.warning(
+                    f"[matches] record_id={record_id} Zero candidates passed job_category filter: "
+                    f"job_category={job_category!r}, candidates_with_desired={candidates_with_desired}, "
+                    f"candidates_matching_category={candidates_matching_category} (pool={len(normalized_candidates)})"
+                )
 
         role_sims: np.ndarray
         domain_sims: np.ndarray
