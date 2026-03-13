@@ -1555,7 +1555,7 @@ ATS_MATCHMAKING_LAST_RUN_FIELD = "Matchmaking Last Run"
     description="Upload top match results to ATS table as linked candidate chips and set Job Status to Matchmaking Done",
     group_name="matching",
     required_resource_keys={"airtable_ats"},
-    code_version="1.3.3",  # v1.3.3: require_airtable_record_fields for Job Status (strict Airtable access)
+    code_version="1.3.4",  # v1.3.4: known_schema for ATS so empty Job Status treated as None
 )
 def upload_matches_to_ats(
     context: AssetExecutionContext,
@@ -1563,7 +1563,10 @@ def upload_matches_to_ats(
 ) -> None:
     """Write matched candidates as linked records on the ATS row and flip status."""
     from talent_matching.models.candidates import NormalizedCandidate
-    from talent_matching.utils.airtable_mapper import require_airtable_record_fields
+    from talent_matching.utils.airtable_mapper import (
+        ATS_KNOWN_FIELD_NAMES,
+        require_airtable_record_fields,
+    )
 
     matches = llm_refined_shortlist
     record_id = context.partition_key
@@ -1574,9 +1577,12 @@ def upload_matches_to_ats(
 
     current_record = ats.fetch_record_by_id(record_id)
     fields = require_airtable_record_fields(
-        current_record, [ATS_JOB_STATUS_FIELD], table_hint="ATS"
+        current_record,
+        [ATS_JOB_STATUS_FIELD],
+        table_hint="ATS",
+        known_schema=ATS_KNOWN_FIELD_NAMES,
     )
-    current_status = fields[ATS_JOB_STATUS_FIELD]
+    current_status = fields.get(ATS_JOB_STATUS_FIELD)
     should_flip_status = current_status == "Matchmaking Ready"
 
     if not should_flip_status:

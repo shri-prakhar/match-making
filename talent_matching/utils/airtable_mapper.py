@@ -6,6 +6,13 @@ be used independently for testing and data transformation.
 
 Strict field access: use require_airtable_field() so that missing fields
 (schema drift, wrong table) fail explicitly instead of silent .get() -> None.
+
+Airtable API behavior: empty fields are omitted from the record response
+(i.e. the key is not present in record["fields"]). So we cannot distinguish
+from the record alone between "field does not exist in the table" and
+"field exists but is empty". When known_schema is passed, we treat key
+absence for a field that is in known_schema as "empty" (return None);
+key absence for a field not in known_schema as "missing" (raise).
 """
 
 import hashlib
@@ -45,27 +52,32 @@ def require_airtable_field(
     *,
     record_id: str | None = None,
     table_hint: str | None = None,
+    known_schema: list[str] | None = None,
 ) -> Any:
-    """Return the value for an Airtable field; raise if the field is missing.
+    """Return the value for an Airtable field; raise only if the field is not in schema.
 
-    Missing = field_name not in fields (schema drift, wrong table). Empty value
-    (None, "", []) is allowed and returned as-is.
+    - If field_name is in fields: return the value (including None, "", []).
+    - If field_name not in fields and known_schema and field_name in known_schema:
+      Airtable omits empty fields, so treat as empty and return None.
+    - Otherwise: raise AirtableFieldMissingError (wrong table or schema drift).
 
     Args:
         fields: The record["fields"] dict from an Airtable API response.
         field_name: Exact Airtable column name (e.g. "Desired Job Category").
         record_id: Optional record id for error context.
         table_hint: Optional table name for error context.
+        known_schema: Optional list of field names that exist in this table.
+          When set, absence of field_name in fields is treated as empty (return None)
+          if field_name is in known_schema; otherwise raised as missing.
 
     Returns:
-        fields[field_name] (may be None or empty).
-
-    Raises:
-        AirtableFieldMissingError: If field_name not in fields.
+        fields[field_name] or None when field in known_schema but omitted (empty).
     """
-    if field_name not in fields:
-        raise AirtableFieldMissingError(field_name, record_id=record_id, table_hint=table_hint)
-    return fields[field_name]
+    if field_name in fields:
+        return fields[field_name]
+    if known_schema and field_name in known_schema:
+        return None
+    raise AirtableFieldMissingError(field_name, record_id=record_id, table_hint=table_hint)
 
 
 def require_airtable_record_fields(
@@ -73,10 +85,12 @@ def require_airtable_record_fields(
     required_field_names: list[str],
     *,
     table_hint: str | None = None,
+    known_schema: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Ensure record has "id" and "fields" and all required field names; return fields.
+    """Ensure record has "id" and "fields"; require each required field to be in schema; return fields.
 
-    Raises AirtableFieldMissingError (or KeyError for "id"/"fields") if any are missing.
+    When known_schema is set: a required field absent from fields is allowed if it is
+    in known_schema (treated as empty). Otherwise absence is raised as missing.
     """
     if "id" not in record:
         raise AirtableFieldMissingError("id", record_id=None, table_hint=table_hint or "record")
@@ -85,8 +99,11 @@ def require_airtable_record_fields(
     fields = record["fields"]
     record_id = str(record["id"])
     for name in required_field_names:
-        if name not in fields:
-            raise AirtableFieldMissingError(name, record_id=record_id, table_hint=table_hint)
+        if name in fields:
+            continue
+        if known_schema and name in known_schema:
+            continue
+        raise AirtableFieldMissingError(name, record_id=record_id, table_hint=table_hint)
     return fields
 
 
@@ -96,15 +113,19 @@ def require_airtable_field_one_of(
     *,
     record_id: str | None = None,
     table_hint: str | None = None,
+    known_schema: list[str] | None = None,
 ) -> Any:
-    """Return the value for the first Airtable field that exists; raise if none exist.
+    """Return the value for the first Airtable field that exists; raise if none in schema.
 
     Use when the schema may use one of several names (e.g. "Job Category" or
-    "Desired Job Category"). Missing = none of field_names in fields.
+    "Desired Job Category"). If known_schema is set and any of field_names is
+    in known_schema but none are in fields, return None (empty). Otherwise raise.
     """
     for name in field_names:
         if name in fields:
             return fields[name]
+    if known_schema and any(n in known_schema for n in field_names):
+        return None
     raise AirtableFieldMissingError(
         " or ".join(repr(n) for n in field_names),
         record_id=record_id,
@@ -114,22 +135,34 @@ def require_airtable_field_one_of(
 
 # ATS (Jobs) table: Airtable field names required for map_ats_record_to_raw_job.
 # If any are missing from a record, we raise AirtableFieldMissingError.
+# Optional in some ATS bases (not required): Level, Work Set Up Preference, Non Negotiables, Nice-to-have, Projected Salary
 ATS_REQUIRED_FIELD_NAMES = [
     "Company",
-    "Level",
-    "Work Set Up Preference",
     "Job Description Link",
     "Open Position (Job Title)",
     "Job Description Text",
     "Job Status",
-    "Non Negotiables",
-    "Nice-to-have",
-    "Projected Salary",
 ]
 # Location: at least one of these must exist (trailing space variant exists in some bases).
 ATS_LOCATION_FIELD_NAMES = ["Preferred Location ", "Preferred Location"]
 # Job category: at least one of these must exist (allow "Job Category" or "Desired Job Category").
 ATS_JOB_CATEGORY_FIELD_NAMES = ["Desired Job Category", "Job Category"]
+
+# All ATS field names we know exist in the table (required + location + category + optional).
+# Used as known_schema so that absent-but-in-schema fields are treated as empty, not missing.
+ATS_OPTIONAL_FIELD_NAMES = [
+    "Level",
+    "Work Set Up Preference",
+    "Non Negotiables",
+    "Nice-to-have",
+    "Projected Salary",
+]
+ATS_KNOWN_FIELD_NAMES = (
+    ATS_REQUIRED_FIELD_NAMES
+    + ATS_LOCATION_FIELD_NAMES
+    + ATS_JOB_CATEGORY_FIELD_NAMES
+    + ATS_OPTIONAL_FIELD_NAMES
+)
 
 
 # Prefix for normalized candidate columns when writing back to Airtable
@@ -612,7 +645,10 @@ def map_airtable_row_to_raw_candidate(
         column_mapping = AIRTABLE_COLUMN_MAPPING
 
     fields = require_airtable_record_fields(
-        record, TALENT_REQUIRED_FIELD_NAMES, table_hint="Talent"
+        record,
+        TALENT_REQUIRED_FIELD_NAMES,
+        table_hint="Talent",
+        known_schema=TALENT_REQUIRED_FIELD_NAMES,
     )
     record_id = str(record["id"])
 
@@ -626,9 +662,9 @@ def map_airtable_row_to_raw_candidate(
     # Fields that may contain Airtable formula/link error payloads; treat as empty
     airtable_errorable_fields = frozenset({"work_experience_raw"})
 
-    # Map each Airtable column to our model field (all keys present after require_airtable_record_fields)
+    # Map each Airtable column to our model field (keys may be absent when empty; use .get)
     for airtable_col, model_field in column_mapping.items():
-        value = fields[airtable_col]
+        value = fields.get(airtable_col)
 
         # Apply field-specific transformations
         if model_field == "cv_url":

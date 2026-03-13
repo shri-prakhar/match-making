@@ -1,0 +1,32 @@
+---
+description: Airtable required vs optional fields and integration tests to prevent schema drift
+alwaysApply: false
+---
+
+# Airtable Field Contract
+
+## Airtable API behavior
+
+- **Empty fields are omitted** from the record response (key not present in `record["fields"]`). So we cannot distinguish from the record alone between "field does not exist in the table" and "field exists but is empty".
+- **Known schema**: We pass `known_schema` (e.g. `ATS_KNOWN_FIELD_NAMES`, `TALENT_REQUIRED_FIELD_NAMES`) so that key absence for a field in known_schema is treated as **empty** (return None); key absence for a field not in known_schema is **missing** (raise `AirtableFieldMissingError`).
+
+## Approach
+
+- **Strict required fields**: ATS and Talent tables have explicit required field lists in `talent_matching/utils/airtable_mapper.py`:
+  - **ATS**: `ATS_REQUIRED_FIELD_NAMES` (Company, Job Description Link, Open Position (Job Title), Job Description Text, Job Status) plus at least one of `ATS_LOCATION_FIELD_NAMES` and one of `ATS_JOB_CATEGORY_FIELD_NAMES`. `ATS_KNOWN_FIELD_NAMES` = required + location + category + `ATS_OPTIONAL_FIELD_NAMES`.
+  - **Talent**: `TALENT_REQUIRED_FIELD_NAMES` (all keys of the candidate column mapping); used as known_schema so omitted fields are empty.
+- **Optional ATS fields** (use `fields.get(...)`, do not add to required): Level, Work Set Up Preference, Non Negotiables, Nice-to-have, Projected Salary (`ATS_OPTIONAL_FIELD_NAMES`).
+- **Access**: Use `require_airtable_field(..., known_schema=...)`, `require_airtable_record_fields(..., known_schema=...)`, `require_airtable_field_one_of(..., known_schema=...)` so that truly missing (not in schema) raises; empty (in schema but omitted) returns None.
+
+## Integration tests
+
+- **`tests/test_airtable.py` → `TestAirtableFieldContract`**: Locks the contract so schema drift is caught.
+  - Adding a field to `ATS_REQUIRED_FIELD_NAMES` (or Talent required) must be reflected in tests: a record without that field must raise `AirtableFieldMissingError` (already covered by `test_ats_missing_required_field_raises` for each required name).
+  - Records with only required fields (and one of location, one of job category) must map successfully; records without optional fields must still map.
+- When changing required/optional lists, run `poetry run pytest tests/test_airtable.py::TestAirtableFieldContract -v` and fix or extend tests so the contract stays consistent.
+
+## Schema integration tests
+
+- **`TestAirtableSchemaIntegration`** (marked `@pytest.mark.integration`): calls the Airtable Meta API `GET .../meta/bases/{baseId}/tables` and asserts that `ATS_KNOWN_FIELD_NAMES` and `TALENT_REQUIRED_FIELD_NAMES` exist in the live table schemas. Catches renames/deletions in Airtable.
+- **Run with env**: `set -a && source .env && set +a && poetry run pytest tests/test_airtable.py -m integration -v`
+- Requires: `AIRTABLE_BASE_ID`, `AIRTABLE_ATS_TABLE_ID`, `AIRTABLE_TABLE_ID` (Talent), and `AIRTABLE_API_KEY` or `AIRTABLE_SCHEMA_TOKEN`. Skipped if any are missing.

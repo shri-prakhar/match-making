@@ -86,3 +86,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "integration: marks tests that call external services (e.g. Airtable schema API); skip without env vars",
+]

@@ -7,14 +7,20 @@ This module tests:
 - Data versioning
 """
 
+import os
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from talent_matching.resources.airtable import AirtableATSResource, AirtableResource
 from talent_matching.utils.airtable_mapper import (
     AIRTABLE_CANDIDATES_WRITEBACK_FIELDS,
+    ATS_JOB_CATEGORY_FIELD_NAMES,
+    ATS_KNOWN_FIELD_NAMES,
+    ATS_LOCATION_FIELD_NAMES,
+    ATS_REQUIRED_FIELD_NAMES,
     NORMALIZATION_INPUT_FIELDS,
     TALENT_REQUIRED_FIELD_NAMES,
     AirtableFieldMissingError,
@@ -24,6 +30,7 @@ from talent_matching.utils.airtable_mapper import (
     map_airtable_row_to_raw_candidate,
     normalized_candidate_to_airtable_fields,
     parse_comma_separated,
+    require_airtable_record_fields,
 )
 
 
@@ -255,15 +262,25 @@ class TestMapAirtableRowToRawCandidate:
         assert result["cv_url"] is None
         assert result["linkedin_url"] is None
 
-    def test_raises_when_required_field_missing(self):
-        """Test that missing required Airtable field raises AirtableFieldMissingError."""
+    def test_raises_when_required_field_missing_and_not_in_schema(self):
+        """When known_schema is not set, missing required field raises (wrong table / schema drift)."""
         record = {
             "id": "recPartial",
             "fields": {"Full Name": "No Category"},
         }
         with pytest.raises(AirtableFieldMissingError) as exc_info:
-            map_airtable_row_to_raw_candidate(record)
+            require_airtable_record_fields(record, TALENT_REQUIRED_FIELD_NAMES, table_hint="Talent")
         assert exc_info.value.field_name in TALENT_REQUIRED_FIELD_NAMES
+
+    def test_talent_omitted_fields_treated_as_empty(self):
+        """When required fields are omitted (Airtable empty), mapping succeeds with None."""
+        record = {"id": "recMin", "fields": {"Full Name": "Jane"}}
+        result = map_airtable_row_to_raw_candidate(record)
+        assert result["full_name"] == "Jane"
+        assert result["airtable_record_id"] == "recMin"
+        assert result["desired_job_categories_raw"] is None
+        assert result["skills_raw"] is None
+        assert result["cv_url"] is None
 
     def test_maps_all_profile_links(self):
         """Test that all profile links are mapped."""
@@ -366,6 +383,246 @@ class TestAirtableATSResourceMapRecord:
         }
         result = ats_resource.map_ats_record_to_raw_job(record)
         assert result["location_raw"] == "Middle East, Europe, India"
+
+
+class TestAirtableFieldContract:
+    """Integration-style tests: lock required vs optional Airtable fields so schema drift is caught.
+
+    If you add a field to ATS_REQUIRED_FIELD_NAMES or TALENT_REQUIRED_FIELD_NAMES, these tests
+    ensure a record without that field raises AirtableFieldMissingError. If you make a field
+    optional (remove from required), a record without it must still map successfully.
+    """
+
+    @pytest.fixture
+    def ats_resource(self):
+        return AirtableATSResource(
+            base_id="appTEST",
+            table_id="tblATS",
+            api_key="pat_test",
+        )
+
+    def _minimal_ats_fields(self, overrides=None):
+        """Minimal ATS record: only required fields + one of location + one of job category."""
+        overrides = overrides or {}
+        fields = {k: None for k in ATS_REQUIRED_FIELD_NAMES}
+        fields["Preferred Location"] = []
+        fields["Desired Job Category"] = []
+        for k, v in overrides.items():
+            fields[k] = v
+        return fields
+
+    def test_ats_minimal_required_fields_succeed(self, ats_resource):
+        """Record with only ATS_REQUIRED_FIELD_NAMES + location + category maps without error."""
+        record = {
+            "id": "recMinimal",
+            "fields": self._minimal_ats_fields(
+                {
+                    "Company": ["Acme"],
+                    "Job Description Link": "https://example.com",
+                    "Open Position (Job Title)": "Test Role",
+                    "Job Description Text": "Description",
+                    "Job Status": "Matchmaking Ready",
+                }
+            ),
+        }
+        result = ats_resource.map_ats_record_to_raw_job(record)
+        assert result["airtable_record_id"] == "recMinimal"
+        assert result["job_title"] == "Test Role"
+        assert result["job_description"] == "Description"
+
+    def test_ats_missing_required_field_raises_when_not_in_schema(self):
+        """When known_schema is not set, missing any required field raises (wrong table / schema drift)."""
+        minimal = self._minimal_ats_fields(
+            {
+                "Company": ["Acme"],
+                "Job Description Link": "https://x.com",
+                "Open Position (Job Title)": "Role",
+                "Job Description Text": "Desc",
+                "Job Status": "Matchmaking Ready",
+            }
+        )
+        for required in ATS_REQUIRED_FIELD_NAMES:
+            fields = {k: v for k, v in minimal.items() if k != required}
+            record = {"id": "recX", "fields": fields}
+            with pytest.raises(AirtableFieldMissingError) as exc_info:
+                require_airtable_record_fields(record, ATS_REQUIRED_FIELD_NAMES, table_hint="ATS")
+            assert exc_info.value.field_name == required
+
+    def test_ats_required_field_empty_treated_as_empty(self, ats_resource):
+        """When field is in known_schema but omitted (Airtable empty), we treat as empty, no raise."""
+        # Record missing "Company" and "Job Status" (omitted = empty in Airtable)
+        fields = {
+            "Job Description Link": "https://example.com",
+            "Open Position (Job Title)": "Role",
+            "Job Description Text": "Desc",
+            "Preferred Location": [],
+            "Desired Job Category": [],
+        }
+        record = {"id": "recEmpty", "fields": fields}
+        result = ats_resource.map_ats_record_to_raw_job(record)
+        assert result["airtable_record_id"] == "recEmpty"
+        assert result["company_name"] is None
+        assert result["job_title"] == "Role"
+        assert result["status_raw"] is None
+
+    def test_ats_optional_fields_may_be_missing(self, ats_resource):
+        """Record without Level, Work Set Up Preference, Non Negotiables, Nice-to-have, Projected Salary still maps."""
+        record = {
+            "id": "recNoOptional",
+            "fields": self._minimal_ats_fields(
+                {
+                    "Company": [],
+                    "Job Description Link": None,
+                    "Open Position (Job Title)": "Compliance Lead",
+                    "Job Description Text": "Text",
+                    "Job Status": None,
+                }
+            ),
+        }
+        # No Level, Work Set Up Preference, etc. - must not raise
+        result = ats_resource.map_ats_record_to_raw_job(record)
+        assert result["job_title"] == "Compliance Lead"
+        assert result["experience_level_raw"] is None
+        assert result["work_setup_raw"] is None
+        assert result["non_negotiables"] is None
+        assert result["nice_to_have"] is None
+        assert result["projected_salary"] is None
+
+    def test_ats_require_airtable_record_fields_fails_on_missing_required(self):
+        """require_airtable_record_fields raises when any required field is missing (no known_schema)."""
+        record = {
+            "id": "recY",
+            "fields": {
+                "Company": [],
+                "Open Position (Job Title)": "X",
+                # missing Job Description Link, Job Description Text, Job Status
+            },
+        }
+        with pytest.raises(AirtableFieldMissingError):
+            require_airtable_record_fields(record, ATS_REQUIRED_FIELD_NAMES, table_hint="ATS")
+
+    def test_ats_field_not_in_known_schema_raises(self):
+        """When a required field is absent and not in known_schema, we raise (schema drift)."""
+        # Schema that doesn't include "Job Status" (e.g. wrong table)
+        wrong_schema = [n for n in ATS_KNOWN_FIELD_NAMES if n != "Job Status"]
+        record = {
+            "id": "recZ",
+            "fields": {
+                "Company": [],
+                "Job Description Link": "https://x.com",
+                "Open Position (Job Title)": "Role",
+                "Job Description Text": "Desc",
+                "Preferred Location": [],
+                "Desired Job Category": [],
+                # Job Status omitted
+            },
+        }
+        with pytest.raises(AirtableFieldMissingError) as exc_info:
+            require_airtable_record_fields(
+                record,
+                ATS_REQUIRED_FIELD_NAMES,
+                table_hint="ATS",
+                known_schema=wrong_schema,
+            )
+        assert exc_info.value.field_name == "Job Status"
+
+    def test_talent_required_fields_documented(self):
+        """TALENT_REQUIRED_FIELD_NAMES is non-empty and contains key fields."""
+        assert len(TALENT_REQUIRED_FIELD_NAMES) > 0
+        assert "Full Name" in TALENT_REQUIRED_FIELD_NAMES
+        assert "Desired Job Category" in TALENT_REQUIRED_FIELD_NAMES
+
+    def test_ats_required_and_optional_lists_disjoint(self):
+        """ATS optional field names are not in ATS_REQUIRED_FIELD_NAMES (contract clarity)."""
+        optional = {
+            "Level",
+            "Work Set Up Preference",
+            "Non Negotiables",
+            "Nice-to-have",
+            "Projected Salary",
+        }
+        required_set = set(ATS_REQUIRED_FIELD_NAMES)
+        assert (
+            required_set & optional == set()
+        ), "Optional fields must not be in ATS_REQUIRED_FIELD_NAMES"
+
+
+def _fetch_airtable_table_field_names(base_id: str, table_id: str, token: str) -> set[str]:
+    """Fetch table schema from Airtable Meta API and return field names. Raises on HTTP errors."""
+    url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
+    headers = {"Authorization": f"Bearer {token}"}
+    with httpx.Client(timeout=30.0) as client:
+        response = client.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+    for t in data.get("tables", []):
+        if t.get("id") == table_id:
+            return {f.get("name") for f in t.get("fields", []) if f.get("name")}
+    return set()
+
+
+@pytest.mark.integration
+class TestAirtableSchemaIntegration:
+    """Integration tests: assert our required/optional field names exist in the live Airtable schema.
+
+    Skipped unless AIRTABLE_BASE_ID, AIRTABLE_ATS_TABLE_ID, AIRTABLE_TABLE_ID (Talent),
+    and AIRTABLE_API_KEY (or AIRTABLE_SCHEMA_TOKEN) are set. Run with:
+      set -a && source .env && set +a && poetry run pytest tests/test_airtable.py -m integration -v
+    """
+
+    @pytest.fixture(scope="class")
+    def _airtable_env(self):
+        base_id = os.getenv("AIRTABLE_BASE_ID")
+        ats_table_id = os.getenv("AIRTABLE_ATS_TABLE_ID")
+        talent_table_id = os.getenv("AIRTABLE_TABLE_ID")
+        token = os.getenv("AIRTABLE_SCHEMA_TOKEN") or os.getenv("AIRTABLE_API_KEY")
+        if not base_id or not ats_table_id or not talent_table_id or not token:
+            pytest.skip(
+                "Set AIRTABLE_BASE_ID, AIRTABLE_ATS_TABLE_ID, AIRTABLE_TABLE_ID, and "
+                "AIRTABLE_API_KEY (or AIRTABLE_SCHEMA_TOKEN) to run Airtable schema integration tests"
+            )
+        return {
+            "base_id": base_id,
+            "ats_table_id": ats_table_id,
+            "talent_table_id": talent_table_id,
+            "token": token,
+        }
+
+    def test_ats_known_fields_exist_in_schema(self, _airtable_env):
+        """Required ATS fields and at least one of location/category names exist in the ATS table schema."""
+        schema_names = _fetch_airtable_table_field_names(
+            _airtable_env["base_id"],
+            _airtable_env["ats_table_id"],
+            _airtable_env["token"],
+        )
+        missing_required = [n for n in ATS_REQUIRED_FIELD_NAMES if n not in schema_names]
+        assert not missing_required, (
+            f"ATS table schema is missing required fields: {missing_required}. "
+            "Rename/restore in Airtable or update ATS_REQUIRED_FIELD_NAMES."
+        )
+        has_location = any(n in schema_names for n in ATS_LOCATION_FIELD_NAMES)
+        assert has_location, (
+            f"ATS table schema must have one of location fields {ATS_LOCATION_FIELD_NAMES}. "
+            "Rename in Airtable or update ATS_LOCATION_FIELD_NAMES."
+        )
+        has_category = any(n in schema_names for n in ATS_JOB_CATEGORY_FIELD_NAMES)
+        assert has_category, (
+            f"ATS table schema must have one of job category fields {ATS_JOB_CATEGORY_FIELD_NAMES}. "
+            "Rename in Airtable or update ATS_JOB_CATEGORY_FIELD_NAMES."
+        )
+
+    def test_talent_required_fields_exist_in_schema(self, _airtable_env):
+        """Every Talent required field exists in the Talent table schema."""
+        schema_names = _fetch_airtable_table_field_names(
+            _airtable_env["base_id"],
+            _airtable_env["talent_table_id"],
+            _airtable_env["token"],
+        )
+        missing = [n for n in TALENT_REQUIRED_FIELD_NAMES if n not in schema_names]
+        assert not missing, (
+            f"Talent table schema is missing fields we require: {missing}. "
+            "Rename/restore in Airtable or update TALENT_REQUIRED_FIELD_NAMES / AIRTABLE_COLUMN_MAPPING."
+        )
 
 
 class TestAirtableResource:
