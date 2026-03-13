@@ -11,6 +11,7 @@ from dagster import OpExecutionContext, job, op
 from sqlalchemy import or_, select, update
 
 from talent_matching.db import get_session
+from talent_matching.location.resolver import load_location_maps
 from talent_matching.matchmaking.location_filter import get_region_for_country
 from talent_matching.models.candidates import NormalizedCandidate
 
@@ -19,6 +20,7 @@ from talent_matching.models.candidates import NormalizedCandidate
 def backfill_candidate_region(context: OpExecutionContext) -> dict:
     """Select candidates with location_country and missing location_region; set region from mapping."""
     session = get_session()
+    country_aliases, region_countries = load_location_maps(session)
     rows = session.execute(
         select(NormalizedCandidate.id, NormalizedCandidate.location_country).where(
             NormalizedCandidate.location_country.is_not(None),
@@ -34,7 +36,11 @@ def backfill_candidate_region(context: OpExecutionContext) -> dict:
     to_update: list[tuple] = []
     for id_, country in rows:
         if country:
-            region = get_region_for_country(country)
+            region = get_region_for_country(
+                country,
+                country_aliases=country_aliases,
+                region_countries=region_countries,
+            )
             if region:
                 to_update.append((id_, region))
 

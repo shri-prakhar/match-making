@@ -29,6 +29,8 @@ from talent_matching.jobs import (
     candidate_vectors_job,
     job_ingest_job,
     job_pipeline_job,
+    location_normalization_job,
+    location_normalization_schedule,
     matchmaking_backfill_job,
     sample_candidates_job,
     skill_normalization_job,
@@ -161,6 +163,7 @@ all_jobs: list[Any] = [
     sync_airtable_jobs_job,
     sample_candidates_job,
     skill_normalization_job,
+    location_normalization_job,
     timezone_lookup_job,
     backfill_candidate_region_job,
     # ATS-driven pipeline (sensor-triggered)
@@ -172,6 +175,7 @@ all_jobs: list[Any] = [
 # Schedules
 all_schedules = [
     skill_normalization_schedule,
+    location_normalization_schedule,
     timezone_lookup_schedule,
 ]
 

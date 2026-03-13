@@ -30,6 +30,10 @@ from talent_matching.jobs.asset_jobs import (
     upload_normalized_to_airtable_job,
 )
 from talent_matching.jobs.backfill_candidate_region_job import backfill_candidate_region_job
+from talent_matching.jobs.location_normalization_job import (
+    location_normalization_job,
+    location_normalization_schedule,
+)
 from talent_matching.jobs.skill_normalization_job import (
     skill_normalization_job,
     skill_normalization_schedule,
@@ -52,6 +56,8 @@ __all__ = [
     "candidate_vectors_job",
     "job_ingest_job",
     "job_pipeline_job",
+    "location_normalization_job",
+    "location_normalization_schedule",
     "matchmaking_backfill_job",
     "sample_candidates_job",
     "skill_normalization_job",

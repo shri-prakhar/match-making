@@ -151,6 +151,38 @@ class TestCandidateMatchesLocation:
         assert candidate_matches_location(candidate, ["New York"]) is True
         assert candidate_matches_location(candidate, ["New York", "Munich"]) is True
 
+    def test_with_provided_maps_uses_db_shaped_data(self):
+        """When country_aliases/region_countries are provided, filter uses them instead of hardcoded."""
+        country_aliases = {"custom_city": "united states", "de": "germany"}
+        region_countries = {"europe": {"germany", "france"}, "north america": {"united states"}}
+        candidate = {
+            "location_region": None,
+            "location_country": None,
+            "location_city": "custom_city",
+        }
+        assert (
+            candidate_matches_location(
+                candidate,
+                ["United States"],
+                country_aliases=country_aliases,
+                region_countries=region_countries,
+            )
+            is True
+        )
+        assert job_locations_to_countries(
+            ["custom_city"],
+            country_aliases=country_aliases,
+            region_countries=region_countries,
+        ) == {"united states"}
+        assert (
+            get_region_for_country(
+                "germany",
+                country_aliases=country_aliases,
+                region_countries=region_countries,
+            )
+            == "europe"
+        )
+
 
 class TestCandidatePassesLocationOrTimezone:
     """Tests for candidate_passes_location_or_timezone (location or same/adjacent timezone)."""

@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from talent_matching.db import get_engine, get_session
+from talent_matching.location.resolver import load_location_maps
 from talent_matching.matchmaking.location_filter import get_region_for_country
 from talent_matching.models import (
     Match,
@@ -501,7 +502,12 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
 
         # Infer region from country when missing (aligns with matchmaking location_filter)
         if location_country and (not location_region or not str(location_region).strip()):
-            inferred = get_region_for_country(location_country)
+            country_aliases, region_countries = load_location_maps(session)
+            inferred = get_region_for_country(
+                location_country,
+                country_aliases=country_aliases,
+                region_countries=region_countries,
+            )
             if inferred:
                 location_region = inferred
 
