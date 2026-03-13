@@ -17,7 +17,8 @@ from talent_matching.db import get_session
 from talent_matching.models.scoring_weights import ScoringWeightsRecord
 from talent_matching.script_env import apply_local_db
 
-# Job category -> list of additional match categories (candidates with these in desired_job_categories will match)
+# Left-hand side must exactly match scoring_weights.job_category (same as normalized_jobs.job_category from ATS).
+# Right-hand side: candidate desired_job_categories that count as a match for this job category.
 SEED_ALIASES = {
     "Compliance": ["Operations", "Legal"],
 }
