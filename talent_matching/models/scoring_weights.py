@@ -6,7 +6,8 @@ is first seen in the pipeline, and later support ML tuning per category.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, String, func
+from sqlalchemy import DateTime, Float, String, Text, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from talent_matching.models.base import Base
@@ -17,11 +18,14 @@ class ScoringWeightsRecord(Base):
 
     When a new job category is encountered in the matchmaking pipeline, we insert
     a row with default weights. ML or manual tuning can update these values later.
+    match_category_aliases: when set, jobs with this category also match candidates
+    who have any of these categories in desired_job_categories (e.g. Compliance -> [Operations, Legal]).
     """
 
     __tablename__ = "scoring_weights"
 
     job_category: Mapped[str] = mapped_column(String(255), primary_key=True)
+    match_category_aliases: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
 
     # Vector similarity sub-weights (role, domain, culture, impact, technical)
     role_weight: Mapped[float] = mapped_column(Float, nullable=False)

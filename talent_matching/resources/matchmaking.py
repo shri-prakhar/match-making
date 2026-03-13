@@ -1,11 +1,13 @@
 """Matchmaking resource: job required skills, candidate skills, and DB helpers for scoring."""
 
+import asyncio
 from typing import Any
 from uuid import UUID, uuid4
 
 import numpy as np
 from dagster import ConfigurableResource
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from talent_matching.config.scoring import (
@@ -14,6 +16,9 @@ from talent_matching.config.scoring import (
     get_weights_for_job_category,
 )
 from talent_matching.db import get_session
+from talent_matching.llm.operations.suggest_job_category_aliases import (
+    suggest_job_category_aliases,
+)
 from talent_matching.models.candidates import CandidateSkill, NormalizedCandidate
 from talent_matching.models.enums import RequirementTypeEnum
 from talent_matching.models.jobs import JobRequiredSkill, NormalizedJob
@@ -26,6 +31,7 @@ from talent_matching.utils.airtable_mapper import (
     NORMALIZED_CANDIDATE_SYNCABLE_FIELDS,
     NORMALIZED_JOB_SYNCABLE_FIELDS,
 )
+from talent_matching.utils.job_category import norm_cat
 
 
 class MatchmakingResource(ConfigurableResource):
@@ -252,6 +258,172 @@ class MatchmakingResource(ConfigurableResource):
 
         session.close()
         return job
+
+    def get_match_categories_for_job_category(
+        self,
+        job_category: str | None,
+        *,
+        openrouter: Any = None,
+        context: Any = None,
+    ) -> set[str]:
+        """Return normalized set of categories that count as a match for this job category.
+
+        Uses scoring_weights.match_category_aliases when set: job matches candidates who
+        have job_category or any alias in their desired_job_categories. When aliases are
+        null/empty and openrouter (and optionally context) are provided, runs LLM to suggest
+        aliases, stores them to the DB, and uses them for this run.
+        """
+        if not (job_category or "").strip():
+            return set()
+        key = (job_category or "").strip()
+        session = self._get_session()
+        row = session.execute(
+            select(ScoringWeightsRecord).where(ScoringWeightsRecord.job_category == key)
+        ).scalar_one_or_none()
+        aliases = list(row.match_category_aliases) if (row and row.match_category_aliases) else []
+        session.close()
+
+        # Ensure a row exists for ATS-only categories so we can store LLM-suggested aliases
+        if row is None and openrouter is not None:
+            session = self._get_session()
+            defaults = default_weights_dict()
+            stmt = (
+                pg_insert(ScoringWeightsRecord)
+                .values(
+                    job_category=key,
+                    role_weight=defaults["role_weight"],
+                    domain_weight=defaults["domain_weight"],
+                    culture_weight=defaults["culture_weight"],
+                    impact_weight=defaults["impact_weight"],
+                    technical_weight=defaults["technical_weight"],
+                    vector_weight=defaults["vector_weight"],
+                    skill_fit_weight=defaults["skill_fit_weight"],
+                    compensation_weight=defaults["compensation_weight"],
+                    location_weight=defaults["location_weight"],
+                    seniority_scale_weight=defaults["seniority_scale_weight"],
+                    skill_rating_weight=defaults["skill_rating_weight"],
+                    skill_semantic_weight=defaults["skill_semantic_weight"],
+                    seniority_max_deduction=defaults["seniority_max_deduction"],
+                    seniority_level_max_deduction=defaults["seniority_level_max_deduction"],
+                    tenure_instability_max_deduction=defaults["tenure_instability_max_deduction"],
+                )
+                .on_conflict_do_nothing(index_elements=["job_category"])
+            )
+            session.execute(stmt)
+            session.commit()
+            session.close()
+            row = None  # re-fetch below
+            aliases = []
+
+        if (row is not None or openrouter is not None) and not aliases and openrouter is not None:
+            if row is None:
+                session = self._get_session()
+                row = session.execute(
+                    select(ScoringWeightsRecord).where(ScoringWeightsRecord.job_category == key)
+                ).scalar_one_or_none()
+                session.close()
+            if row is not None:
+                allowed = self.get_allowed_job_categories()
+                if context is not None and hasattr(context, "log"):
+                    context.log.info(
+                        f"[matches] job_category={key!r} has no match_category_aliases; "
+                        "running LLM to suggest and store"
+                    )
+                suggested = asyncio.run(suggest_job_category_aliases(openrouter, key, allowed))
+                if suggested:
+                    session = self._get_session()
+                    stmt = (
+                        update(ScoringWeightsRecord)
+                        .where(ScoringWeightsRecord.job_category == key)
+                        .where(ScoringWeightsRecord.match_category_aliases.is_(None))
+                        .values(match_category_aliases=suggested)
+                    )
+                    result = session.execute(stmt)
+                    session.commit()
+                    if result.rowcount > 0:
+                        aliases = suggested
+                    else:
+                        row_again = session.execute(
+                            select(ScoringWeightsRecord).where(
+                                ScoringWeightsRecord.job_category == key
+                            )
+                        ).scalar_one_or_none()
+                        if row_again and row_again.match_category_aliases:
+                            aliases = list(row_again.match_category_aliases)
+                    session.close()
+
+        # Only include categories that are in the canonical (Talent) list
+        allowed = self.get_allowed_job_categories()
+        allowed_norm = {norm_cat(c) for c in allowed if (c or "").strip()}
+        categories = [key] + aliases
+        return {
+            norm_cat(c) for c in categories if (c or "").strip() and norm_cat(c) in allowed_norm
+        }
+
+    def get_weights_for_match_categories(self, match_categories_norm: set[str]) -> ScoringWeights:
+        """Return scoring weights as a blend of weights for canonical (Talent) categories only.
+
+        Used so jobs whose job_category is not in Talent (e.g. ATS-only 'Compliance') are
+        scored using a weighted mix of their match categories (e.g. Operations, Legal),
+        not a row for the non-canonical category.
+        """
+        if not match_categories_norm:
+            return get_weights_for_job_category(None)
+        allowed = self.get_allowed_job_categories()
+        canonical_in_set = [
+            c for c in allowed if (c or "").strip() and norm_cat(c) in match_categories_norm
+        ]
+        if not canonical_in_set:
+            return get_weights_for_job_category(None)
+
+        session = self._get_session()
+        rows = (
+            session.execute(
+                select(ScoringWeightsRecord).where(
+                    ScoringWeightsRecord.job_category.in_(canonical_in_set)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        session.close()
+
+        if not rows:
+            return get_weights_for_job_category(None)
+        # Average each weight field across the rows
+        n = len(rows)
+        role = sum(r.role_weight for r in rows) / n
+        domain = sum(r.domain_weight for r in rows) / n
+        culture = sum(r.culture_weight for r in rows) / n
+        impact = sum(r.impact_weight for r in rows) / n
+        technical = sum(r.technical_weight for r in rows) / n
+        vector = sum(r.vector_weight for r in rows) / n
+        skill_fit = sum(r.skill_fit_weight for r in rows) / n
+        compensation = sum(r.compensation_weight for r in rows) / n
+        location = sum(r.location_weight for r in rows) / n
+        seniority_scale = sum(r.seniority_scale_weight for r in rows) / n
+        skill_rating = sum(r.skill_rating_weight for r in rows) / n
+        skill_semantic = sum(r.skill_semantic_weight for r in rows) / n
+        seniority_max = sum(r.seniority_max_deduction for r in rows) / n
+        seniority_level_max = sum(r.seniority_level_max_deduction for r in rows) / n
+        tenure_instability = sum(r.tenure_instability_max_deduction for r in rows) / n
+        return ScoringWeights(
+            role_weight=role,
+            domain_weight=domain,
+            culture_weight=culture,
+            impact_weight=impact,
+            technical_weight=technical,
+            vector_weight=vector,
+            skill_fit_weight=skill_fit,
+            compensation_weight=compensation,
+            location_weight=location,
+            seniority_scale_weight=seniority_scale,
+            skill_rating_weight=skill_rating,
+            skill_semantic_weight=skill_semantic,
+            seniority_max_deduction=seniority_max,
+            seniority_level_max_deduction=seniority_level_max,
+            tenure_instability_max_deduction=tenure_instability,
+        )
 
     def get_allowed_job_categories(self) -> list[str]:
         """Return canonical job categories from scoring_weights for use in job normalization.

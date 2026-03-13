@@ -749,7 +749,7 @@ SKILL_MIN_THRESHOLD = 0.0
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.16.0",  # v2.16.0: log job category hard filter (passed/total, desired set, matching category)
+    code_version="2.18.0",  # v2.18.0: weights from blend of canonical match categories only; match set only Talent categories
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={
@@ -878,7 +878,12 @@ def matches(
         job_location_type = job.get("location_type")
         job_timezone = job.get("timezone_requirements")
         job_category = (job.get("job_category") or "").strip()
-        weights = matchmaking.get_or_create_weights_for_job_category(job.get("job_category"))
+        job_match_categories_norm = matchmaking.get_match_categories_for_job_category(
+            job_category,
+            openrouter=getattr(context.resources, "openrouter", None),
+            context=context,
+        )
+        weights = matchmaking.get_weights_for_match_categories(job_match_categories_norm)
         if not must_have:
             zero_must_haves = True
             low_info_matchmaking = True
@@ -903,7 +908,6 @@ def matches(
                 s = s[1:-1].strip()
             return s.lower()
 
-        job_cat_norm = _norm_cat(job_category)
         filtered_candidates: list[tuple[dict[str, Any], str, str]] = []
         candidates_with_desired = 0
         candidates_matching_category = 0
@@ -918,13 +922,13 @@ def matches(
             desired_normalized = {_norm_cat(c) for c in desired if (c or "").strip()}
             if desired_normalized:
                 candidates_with_desired += 1
-            if job_cat_norm and job_cat_norm in desired_normalized:
+            if job_match_categories_norm and (job_match_categories_norm & desired_normalized):
                 candidates_matching_category += 1
-            if not desired_normalized or job_cat_norm not in desired_normalized:
+            if not desired_normalized or not (job_match_categories_norm & desired_normalized):
                 continue
             filtered_candidates.append((candidate, raw_cand_id, str(cand_id_norm)))
 
-        if job_cat_norm:
+        if job_match_categories_norm:
             context.log.info(
                 f"[matches] record_id={record_id} Job category filter "
                 f"{job_category!r}: {len(filtered_candidates)}/{len(normalized_candidates)} candidates "

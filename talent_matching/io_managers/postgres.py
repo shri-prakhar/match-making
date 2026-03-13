@@ -39,6 +39,7 @@ from talent_matching.models.enums import (
     SeniorityEnum,
 )
 from talent_matching.models.jobs import JobRequiredSkill
+from talent_matching.models.scoring_weights import ScoringWeightsRecord
 from talent_matching.models.skills import Skill
 from talent_matching.models.vectors import CandidateVector
 from talent_matching.services.timezone_resolver import resolve_candidate_timezone
@@ -47,6 +48,7 @@ from talent_matching.utils.airtable_mapper import (
     compute_normalization_input_hash,
     parse_comma_separated,
 )
+from talent_matching.utils.job_category import resolve_desired_job_categories_to_canonical
 
 
 def _parse_employment_type(value: Any) -> EmploymentTypeEnum | None:
@@ -587,6 +589,23 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             verified_communities if isinstance(verified_communities, list) else []
         )
 
+        # Resolve desired_job_categories to canonical (Talent) taxonomy only
+        canonical_list = [
+            r
+            for r in session.execute(
+                select(ScoringWeightsRecord.job_category).order_by(
+                    ScoringWeightsRecord.job_category
+                )
+            )
+            .scalars()
+            .all()
+            if r and str(r).strip()
+        ]
+        raw_desired = parse_comma_separated(raw_candidate.desired_job_categories_raw) or []
+        desired_job_categories_resolved = (
+            resolve_desired_job_categories_to_canonical(raw_desired, canonical_list) or None
+        )
+
         # Map data to NormalizedCandidate model fields
         values = {
             "airtable_record_id": partition_key,
@@ -602,10 +621,7 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
             "current_role": normalized_json.get("current_role"),
             "seniority_level": _parse_seniority(normalized_json.get("seniority_level")),
             "years_of_experience": normalized_json.get("years_of_experience"),
-            "desired_job_categories": parse_comma_separated(
-                raw_candidate.desired_job_categories_raw
-            )
-            or None,
+            "desired_job_categories": desired_job_categories_resolved,
             "skills_summary": skills_list if skills_list else None,
             "companies_summary": companies if companies else None,
             "notable_achievements": notable_achievements if notable_achievements else None,
