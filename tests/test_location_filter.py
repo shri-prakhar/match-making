@@ -141,6 +141,16 @@ class TestCandidateMatchesLocation:
         assert candidate_matches_location(candidate, ["GERMANY"]) is True
         assert candidate_matches_location(candidate, ["Munich"]) is True
 
+    def test_candidate_city_ny_matches_job_new_york(self):
+        """Candidate with city 'NY' (abbreviation) should match job 'New York' (CVs often use NY)."""
+        candidate = {
+            "location_region": None,
+            "location_country": None,
+            "location_city": "NY",
+        }
+        assert candidate_matches_location(candidate, ["New York"]) is True
+        assert candidate_matches_location(candidate, ["New York", "Munich"]) is True
+
 
 class TestCandidatePassesLocationOrTimezone:
     """Tests for candidate_passes_location_or_timezone (location or same/adjacent timezone)."""
@@ -209,6 +219,10 @@ class TestJobLocationsToCountries:
     def test_country_passthrough(self):
         assert job_locations_to_countries(["Germany"]) == {"germany"}
         assert job_locations_to_countries(["USA"]) == {"united states"}
+
+    def test_city_abbreviation_ny_resolves_to_united_states(self):
+        """Job preferred location 'NY' (abbreviation) resolves to United States."""
+        assert job_locations_to_countries(["NY"]) == {"united states"}
 
     def test_empty_input(self):
         assert job_locations_to_countries([]) == set()

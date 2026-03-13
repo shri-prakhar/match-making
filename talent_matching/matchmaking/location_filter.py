@@ -324,6 +324,9 @@ COUNTRY_ALIASES: dict[str, str] = {
     "tokyo": "japan",
     "london": "united kingdom",
     "new york": "united states",
+    "ny": "united states",  # common CV abbreviation for New York
+    "la": "united states",  # Los Angeles
+    "sf": "united states",  # San Francisco
     "munich": "germany",
     "dubai": "united arab emirates",
     "berlin": "germany",
@@ -499,6 +502,11 @@ def candidate_matches_location(candidate: dict, job_locations: list[str]) -> boo
         return True
 
     cand_values = {cand_region, cand_country, cand_city} - {""}
+    # Resolve candidate city through aliases (e.g. "ny" -> "united states") so job "New York" matches
+    if cand_city:
+        resolved_city = _resolve_country(cand_city)
+        if resolved_city and resolved_city != cand_city:
+            cand_values.add(resolved_city)
 
     for job_loc in job_locations:
         j = _normalize(job_loc)
