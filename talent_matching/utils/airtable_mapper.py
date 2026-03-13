@@ -3,6 +3,9 @@
 This module provides functions for mapping Airtable field formats to our
 internal data model. These are used by the AirtableResource but can also
 be used independently for testing and data transformation.
+
+Strict field access: use require_airtable_field() so that missing fields
+(schema drift, wrong table) fail explicitly instead of silent .get() -> None.
 """
 
 import hashlib
@@ -10,6 +13,124 @@ import json
 import re
 from datetime import datetime
 from typing import Any, cast
+
+
+class AirtableFieldMissingError(Exception):
+    """Raised when an expected Airtable field is not present in the record.
+
+    Missing = key not in record["fields"]. Empty value (None, "", []) is allowed.
+    """
+
+    def __init__(
+        self,
+        field_name: str,
+        *,
+        record_id: str | None = None,
+        table_hint: str | None = None,
+    ) -> None:
+        self.field_name = field_name
+        self.record_id = record_id
+        self.table_hint = table_hint
+        parts = [f"Airtable field {field_name!r} is missing from the record"]
+        if record_id:
+            parts.append(f"record_id={record_id}")
+        if table_hint:
+            parts.append(f"table={table_hint}")
+        super().__init__("; ".join(parts))
+
+
+def require_airtable_field(
+    fields: dict[str, Any],
+    field_name: str,
+    *,
+    record_id: str | None = None,
+    table_hint: str | None = None,
+) -> Any:
+    """Return the value for an Airtable field; raise if the field is missing.
+
+    Missing = field_name not in fields (schema drift, wrong table). Empty value
+    (None, "", []) is allowed and returned as-is.
+
+    Args:
+        fields: The record["fields"] dict from an Airtable API response.
+        field_name: Exact Airtable column name (e.g. "Desired Job Category").
+        record_id: Optional record id for error context.
+        table_hint: Optional table name for error context.
+
+    Returns:
+        fields[field_name] (may be None or empty).
+
+    Raises:
+        AirtableFieldMissingError: If field_name not in fields.
+    """
+    if field_name not in fields:
+        raise AirtableFieldMissingError(field_name, record_id=record_id, table_hint=table_hint)
+    return fields[field_name]
+
+
+def require_airtable_record_fields(
+    record: dict[str, Any],
+    required_field_names: list[str],
+    *,
+    table_hint: str | None = None,
+) -> dict[str, Any]:
+    """Ensure record has "id" and "fields" and all required field names; return fields.
+
+    Raises AirtableFieldMissingError (or KeyError for "id"/"fields") if any are missing.
+    """
+    if "id" not in record:
+        raise AirtableFieldMissingError("id", record_id=None, table_hint=table_hint or "record")
+    if "fields" not in record:
+        raise AirtableFieldMissingError("fields", record_id=record.get("id"), table_hint=table_hint)
+    fields = record["fields"]
+    record_id = str(record["id"])
+    for name in required_field_names:
+        if name not in fields:
+            raise AirtableFieldMissingError(name, record_id=record_id, table_hint=table_hint)
+    return fields
+
+
+def require_airtable_field_one_of(
+    fields: dict[str, Any],
+    field_names: list[str],
+    *,
+    record_id: str | None = None,
+    table_hint: str | None = None,
+) -> Any:
+    """Return the value for the first Airtable field that exists; raise if none exist.
+
+    Use when the schema may use one of several names (e.g. "Job Category" or
+    "Desired Job Category"). Missing = none of field_names in fields.
+    """
+    for name in field_names:
+        if name in fields:
+            return fields[name]
+    raise AirtableFieldMissingError(
+        " or ".join(repr(n) for n in field_names),
+        record_id=record_id,
+        table_hint=table_hint,
+    )
+
+
+# ATS (Jobs) table: Airtable field names required for map_ats_record_to_raw_job.
+# If any are missing from a record, we raise AirtableFieldMissingError.
+ATS_REQUIRED_FIELD_NAMES = [
+    "Company",
+    "Level",
+    "Work Set Up Preference",
+    "Job Description Link",
+    "Open Position (Job Title)",
+    "Job Description Text",
+    "Job Status",
+    "Non Negotiables",
+    "Nice-to-have",
+    "Projected Salary",
+]
+# Location: at least one of these must exist (trailing space variant exists in some bases).
+ATS_LOCATION_FIELD_NAMES = ["Preferred Location ", "Preferred Location"]
+# Job category: at least one of these must exist (allow "Job Category" or "Desired Job Category").
+ATS_JOB_CATEGORY_FIELD_NAMES = ["Desired Job Category", "Job Category"]
+
 
 # Prefix for normalized candidate columns when writing back to Airtable
 NORMALIZED_COLUMN_PREFIX = "(N) "
@@ -163,6 +284,9 @@ AIRTABLE_COLUMN_MAPPING: dict[str, str] = {
     "Work Experience": "work_experience_raw",
     "Job Status": "job_status_raw",
 }
+
+# Talent (Candidates) table: all mapped columns required so schema drift fails.
+TALENT_REQUIRED_FIELD_NAMES = list(AIRTABLE_COLUMN_MAPPING.keys())
 
 
 def extract_cv_url(cv_field: Any) -> str | None:
@@ -487,21 +611,24 @@ def map_airtable_row_to_raw_candidate(
     if column_mapping is None:
         column_mapping = AIRTABLE_COLUMN_MAPPING
 
-    fields = record.get("fields", {})
+    fields = require_airtable_record_fields(
+        record, TALENT_REQUIRED_FIELD_NAMES, table_hint="Talent"
+    )
+    record_id = str(record["id"])
 
     # Start with metadata fields
     mapped: dict[str, Any] = {
-        "airtable_record_id": record.get("id"),
+        "airtable_record_id": record_id,
         "source": "airtable",
-        "source_id": record.get("id"),
+        "source_id": record_id,
     }
 
     # Fields that may contain Airtable formula/link error payloads; treat as empty
     airtable_errorable_fields = frozenset({"work_experience_raw"})
 
-    # Map each Airtable column to our model field
+    # Map each Airtable column to our model field (all keys present after require_airtable_record_fields)
     for airtable_col, model_field in column_mapping.items():
-        value = fields.get(airtable_col)
+        value = fields[airtable_col]
 
         # Apply field-specific transformations
         if model_field == "cv_url":

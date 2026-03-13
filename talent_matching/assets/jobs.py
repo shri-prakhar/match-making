@@ -364,7 +364,7 @@ def _build_job_description_for_scoring(
     group_name="jobs",
     io_manager_key="postgres_io",
     required_resource_keys={"openrouter", "matchmaking"},
-    code_version="2.5.0",  # v2.5.0: job_category from candidate taxonomy for matchmaking alignment
+    code_version="2.6.0",  # v2.6.0: fail normalization when job_category missing given allowed list
     metadata={
         "table": "normalized_jobs",
         "llm_operation": "normalize_job",
@@ -419,6 +419,21 @@ def normalized_jobs(
         )
     )
     data = result.data
+    if allowed_job_categories and not (
+        data.get("job_category") and str(data.get("job_category", "")).strip()
+    ):
+        raise Failure(
+            description=(
+                f"Normalize job for record_id={record_id} did not return job_category; "
+                "LLM must set job_category to one of the allowed list for matchmaking. "
+                "Retry or fix the prompt."
+            ),
+            metadata={
+                "record_id": record_id,
+                "allowed_job_categories_count": len(allowed_job_categories),
+            },
+            allow_retries=True,
+        )
     requirements = data.get("requirements") or {}
     must_have_count = len(requirements.get("must_have_skills") or [])
     context.add_output_metadata(
@@ -733,7 +748,7 @@ SKILL_MIN_THRESHOLD = 0.30
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.13.0",  # v2.13.0: scoring weights per job_category via get_weights_for_job_category
+    code_version="2.14.0",  # v2.14.0: no candidates scored when job has no job_category (strict gate)
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={
@@ -874,25 +889,25 @@ def matches(
             no_job_category = True
             low_info_matchmaking = True
             context.log.warning(
-                f"[matches] record_id={record_id} Job has no job_category; desired role "
-                "filter will be skipped"
+                f"[matches] record_id={record_id} Job has no job_category; no candidates "
+                "will be scored (strict gate until job has a category)"
             )
 
         # Per (job, candidate) raw scores; then we rescale vector_score per job
-        # Batch vector similarity: filter candidates first, then compute role/domain/culture in one pass
+        # Batch vector similarity: filter candidates first, then compute role/domain/culture in one pass.
+        # When job has no job_category we exclude all candidates (no matches until job has a category).
         filtered_candidates: list[tuple[dict[str, Any], str, str]] = []
         for candidate in normalized_candidates:
             cand_id_norm = candidate.get("id")
             raw_cand_id = str(candidate.get("raw_candidate_id", ""))
             if not cand_id_norm or not raw_cand_id:
                 continue
-            if job_category:
-                desired = candidate.get("desired_job_categories") or []
-                desired_normalized = {
-                    (c or "").strip().lower() for c in desired if (c or "").strip()
-                }
-                if not desired_normalized or job_category.lower() not in desired_normalized:
-                    continue
+            if not job_category:
+                continue
+            desired = candidate.get("desired_job_categories") or []
+            desired_normalized = {(c or "").strip().lower() for c in desired if (c or "").strip()}
+            if not desired_normalized or job_category.lower() not in desired_normalized:
+                continue
             filtered_candidates.append((candidate, raw_cand_id, str(cand_id_norm)))
 
         role_sims: np.ndarray
@@ -1540,7 +1555,7 @@ ATS_MATCHMAKING_LAST_RUN_FIELD = "Matchmaking Last Run"
     description="Upload top match results to ATS table as linked candidate chips and set Job Status to Matchmaking Done",
     group_name="matching",
     required_resource_keys={"airtable_ats"},
-    code_version="1.3.2",  # v1.3.2: clear existing matches (AI PROPOSED + Matches table) before upload
+    code_version="1.3.3",  # v1.3.3: require_airtable_record_fields for Job Status (strict Airtable access)
 )
 def upload_matches_to_ats(
     context: AssetExecutionContext,
@@ -1548,6 +1563,7 @@ def upload_matches_to_ats(
 ) -> None:
     """Write matched candidates as linked records on the ATS row and flip status."""
     from talent_matching.models.candidates import NormalizedCandidate
+    from talent_matching.utils.airtable_mapper import require_airtable_record_fields
 
     matches = llm_refined_shortlist
     record_id = context.partition_key
@@ -1557,7 +1573,10 @@ def upload_matches_to_ats(
     )
 
     current_record = ats.fetch_record_by_id(record_id)
-    current_status = current_record.get("fields", {}).get(ATS_JOB_STATUS_FIELD)
+    fields = require_airtable_record_fields(
+        current_record, [ATS_JOB_STATUS_FIELD], table_hint="ATS"
+    )
+    current_status = fields[ATS_JOB_STATUS_FIELD]
     should_flip_status = current_status == "Matchmaking Ready"
 
     if not should_flip_status:

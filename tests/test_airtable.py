@@ -16,6 +16,8 @@ from talent_matching.resources.airtable import AirtableATSResource, AirtableReso
 from talent_matching.utils.airtable_mapper import (
     AIRTABLE_CANDIDATES_WRITEBACK_FIELDS,
     NORMALIZATION_INPUT_FIELDS,
+    TALENT_REQUIRED_FIELD_NAMES,
+    AirtableFieldMissingError,
     compute_normalization_input_hash,
     extract_cv_url,
     is_airtable_error_value,
@@ -188,6 +190,14 @@ class TestNormalizationInputHash:
         assert h1 != h2
 
 
+def _full_talent_fields(overrides: dict | None = None) -> dict:
+    """All required Talent Airtable keys present (None by default). Merge overrides for tests."""
+    fields = {k: None for k in TALENT_REQUIRED_FIELD_NAMES}
+    if overrides:
+        fields.update(overrides)
+    return fields
+
+
 class TestMapAirtableRowToRawCandidate:
     """Tests for Airtable record mapping."""
 
@@ -196,11 +206,13 @@ class TestMapAirtableRowToRawCandidate:
         record = {
             "id": "recXYZ123",
             "createdTime": "2024-01-15T10:30:00.000Z",
-            "fields": {
-                "Full Name": "John Doe",
-                "Location": "San Francisco, CA",
-                "Skills": "Python,Rust,Solana",
-            },
+            "fields": _full_talent_fields(
+                {
+                    "Full Name": "John Doe",
+                    "Location": "San Francisco, CA",
+                    "Skills": "Python,Rust,Solana",
+                }
+            ),
         }
 
         result = map_airtable_row_to_raw_candidate(record)
@@ -216,23 +228,23 @@ class TestMapAirtableRowToRawCandidate:
         """Test that CV URL is extracted from attachment format."""
         record = {
             "id": "recABC",
-            "fields": {
-                "Full Name": "Jane Doe",
-                "CV": [{"url": "https://example.com/cv.pdf"}],
-            },
+            "fields": _full_talent_fields(
+                {
+                    "Full Name": "Jane Doe",
+                    "CV": [{"url": "https://example.com/cv.pdf"}],
+                }
+            ),
         }
 
         result = map_airtable_row_to_raw_candidate(record)
 
         assert result["cv_url"] == "https://example.com/cv.pdf"
 
-    def test_handles_missing_fields(self):
-        """Test that missing fields are set to None."""
+    def test_handles_empty_required_fields_as_none(self):
+        """Test that required fields present but empty are mapped to None."""
         record = {
             "id": "recMinimal",
-            "fields": {
-                "Full Name": "Minimal Candidate",
-            },
+            "fields": _full_talent_fields({"Full Name": "Minimal Candidate"}),
         }
 
         result = map_airtable_row_to_raw_candidate(record)
@@ -243,17 +255,29 @@ class TestMapAirtableRowToRawCandidate:
         assert result["cv_url"] is None
         assert result["linkedin_url"] is None
 
+    def test_raises_when_required_field_missing(self):
+        """Test that missing required Airtable field raises AirtableFieldMissingError."""
+        record = {
+            "id": "recPartial",
+            "fields": {"Full Name": "No Category"},
+        }
+        with pytest.raises(AirtableFieldMissingError) as exc_info:
+            map_airtable_row_to_raw_candidate(record)
+        assert exc_info.value.field_name in TALENT_REQUIRED_FIELD_NAMES
+
     def test_maps_all_profile_links(self):
         """Test that all profile links are mapped."""
         record = {
             "id": "recProfiles",
-            "fields": {
-                "Full Name": "Profile Person",
-                "X Profile Link": "https://x.com/profile",
-                "LinkedIn Profile": "https://linkedin.com/in/profile",
-                "Git Hub Profile": "https://github.com/profile",
-                "Earn Profile": "https://earn.superteam.fun/profile",
-            },
+            "fields": _full_talent_fields(
+                {
+                    "Full Name": "Profile Person",
+                    "X Profile Link": "https://x.com/profile",
+                    "LinkedIn Profile": "https://linkedin.com/in/profile",
+                    "Git Hub Profile": "https://github.com/profile",
+                    "Earn Profile": "https://earn.superteam.fun/profile",
+                }
+            ),
         }
 
         result = map_airtable_row_to_raw_candidate(record)
@@ -267,10 +291,12 @@ class TestMapAirtableRowToRawCandidate:
         """Work Experience formula/link error payload is mapped to None (not stored as content)."""
         record = {
             "id": "rec95yW2hzAVnQuMX",
-            "fields": {
-                "Full Name": "Mike Hukiewitz",
-                "Work Experience": '{"state": "error", "errorType": "emptyDependency", "value": null, "isStale": false}',
-            },
+            "fields": _full_talent_fields(
+                {
+                    "Full Name": "Mike Hukiewitz",
+                    "Work Experience": '{"state": "error", "errorType": "emptyDependency", "value": null, "isStale": false}',
+                }
+            ),
         }
         result = map_airtable_row_to_raw_candidate(record)
         assert result["work_experience_raw"] is None
@@ -297,6 +323,7 @@ class TestAirtableATSResourceMapRecord:
                 "Company": ["Acme Corp"],
                 "Job Description Link": "https://notion.so/Job-abc",
                 "Job Description Text": "Build APIs.",
+                "Job Status": "Matchmaking Ready",
                 "Non Negotiables": "5+ years Node.js",
                 "Nice-to-have": "Rust, Solana",
                 "Projected Salary": "$150k–$200k",
@@ -323,8 +350,18 @@ class TestAirtableATSResourceMapRecord:
         record = {
             "id": "recATS456",
             "fields": {
+                "Company": [],
+                "Level": [],
+                "Work Set Up Preference": [],
+                "Job Description Link": None,
                 "Open Position (Job Title)": "Growth Analyst",
+                "Job Description Text": "",
+                "Job Status": None,
+                "Non Negotiables": None,
+                "Nice-to-have": None,
+                "Projected Salary": None,
                 "Preferred Location ": ["Middle East", "Europe", "India"],
+                "Desired Job Category": [],
             },
         }
         result = ats_resource.map_ats_record_to_raw_job(record)
@@ -357,17 +394,11 @@ class TestAirtableResource:
         """Test that data version hash changes when content changes."""
         record1 = {
             "id": "rec1",
-            "fields": {
-                "Full Name": "John Doe",
-                "Skills": "Python",
-            },
+            "fields": _full_talent_fields({"Full Name": "John Doe", "Skills": "Python"}),
         }
         record2 = {
             "id": "rec1",
-            "fields": {
-                "Full Name": "John Doe",
-                "Skills": "Python,Rust",  # Changed
-            },
+            "fields": _full_talent_fields({"Full Name": "John Doe", "Skills": "Python,Rust"}),
         }
 
         mapped1 = resource._map_record(record1)
@@ -379,10 +410,7 @@ class TestAirtableResource:
         """Test that data version hash is consistent for same content."""
         record = {
             "id": "rec1",
-            "fields": {
-                "Full Name": "John Doe",
-                "Skills": "Python",
-            },
+            "fields": _full_talent_fields({"Full Name": "John Doe", "Skills": "Python"}),
         }
 
         mapped1 = resource._map_record(record)
@@ -401,10 +429,7 @@ class TestAirtableResource:
         mock_response.json.return_value = {
             "id": "recTEST",
             "createdTime": "2024-01-15T10:30:00.000Z",
-            "fields": {
-                "Full Name": "Test User",
-                "Skills": "Python,Rust",
-            },
+            "fields": _full_talent_fields({"Full Name": "Test User", "Skills": "Python,Rust"}),
         }
         mock_client.get.return_value = mock_response
 
@@ -426,7 +451,7 @@ class TestAirtableResource:
         page1_response = MagicMock()
         page1_response.json.return_value = {
             "records": [
-                {"id": "rec1", "fields": {"Full Name": "User 1"}},
+                {"id": "rec1", "fields": _full_talent_fields({"Full Name": "User 1"})},
             ],
             "offset": "page2_cursor",
         }
@@ -435,7 +460,7 @@ class TestAirtableResource:
         page2_response = MagicMock()
         page2_response.json.return_value = {
             "records": [
-                {"id": "rec2", "fields": {"Full Name": "User 2"}},
+                {"id": "rec2", "fields": _full_talent_fields({"Full Name": "User 2"})},
             ],
         }
 

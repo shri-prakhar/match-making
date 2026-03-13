@@ -14,7 +14,15 @@ import httpx
 from dagster import ConfigurableResource
 from pydantic import Field
 
-from talent_matching.utils.airtable_mapper import map_airtable_row_to_raw_candidate
+from talent_matching.utils.airtable_mapper import (
+    ATS_JOB_CATEGORY_FIELD_NAMES,
+    ATS_LOCATION_FIELD_NAMES,
+    ATS_REQUIRED_FIELD_NAMES,
+    map_airtable_row_to_raw_candidate,
+    require_airtable_field,
+    require_airtable_field_one_of,
+    require_airtable_record_fields,
+)
 
 
 class AirtableResource(ConfigurableResource):
@@ -555,44 +563,73 @@ class AirtableATSResource(ConfigurableResource):
             return response.json()
 
     def map_ats_record_to_raw_job(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Map an ATS record to RawJob-compatible fields for Postgres ingestion."""
-        fields = record.get("fields", {})
+        """Map an ATS record to RawJob-compatible fields for Postgres ingestion.
 
-        company_links = fields.get("Company", [])
+        Raises AirtableFieldMissingError if any required Airtable field is missing.
+        """
+        fields = require_airtable_record_fields(record, ATS_REQUIRED_FIELD_NAMES, table_hint="ATS")
+        record_id = str(record["id"])
+
+        company_links = require_airtable_field(
+            fields, "Company", record_id=record_id, table_hint="ATS"
+        )
         company_name = None
         if isinstance(company_links, list) and company_links:
             company_name = company_links[0] if isinstance(company_links[0], str) else None
 
-        location_values = fields.get("Preferred Location ", fields.get("Preferred Location", []))
+        location_values = require_airtable_field_one_of(
+            fields, ATS_LOCATION_FIELD_NAMES, record_id=record_id, table_hint="ATS"
+        )
         location_raw = ", ".join(location_values) if isinstance(location_values, list) else None
 
-        level_values = fields.get("Level", [])
+        level_values = require_airtable_field(
+            fields, "Level", record_id=record_id, table_hint="ATS"
+        )
         level_raw = ", ".join(level_values) if isinstance(level_values, list) else None
 
-        category_values = fields.get("Desired Job Category", [])
+        category_values = require_airtable_field_one_of(
+            fields, ATS_JOB_CATEGORY_FIELD_NAMES, record_id=record_id, table_hint="ATS"
+        )
         category_raw = ", ".join(category_values) if isinstance(category_values, list) else None
 
-        work_setup = fields.get("Work Set Up Preference", [])
+        work_setup = require_airtable_field(
+            fields, "Work Set Up Preference", record_id=record_id, table_hint="ATS"
+        )
         work_setup_raw = ", ".join(work_setup) if isinstance(work_setup, list) else None
 
         return {
-            "airtable_record_id": record.get("id"),
+            "airtable_record_id": record_id,
             "source": "airtable_ats",
-            "source_id": record.get("id"),
-            "source_url": fields.get("Job Description Link"),
-            "job_title": fields.get("Open Position (Job Title)"),
+            "source_id": record_id,
+            "source_url": require_airtable_field(
+                fields, "Job Description Link", record_id=record_id, table_hint="ATS"
+            ),
+            "job_title": require_airtable_field(
+                fields, "Open Position (Job Title)", record_id=record_id, table_hint="ATS"
+            ),
             "company_name": company_name,
-            "job_description": fields.get("Job Description Text") or "",
+            "job_description": require_airtable_field(
+                fields, "Job Description Text", record_id=record_id, table_hint="ATS"
+            )
+            or "",
             "company_website_url": None,
             "experience_level_raw": level_raw,
             "location_raw": location_raw,
             "work_setup_raw": work_setup_raw,
-            "status_raw": fields.get("Job Status"),
+            "status_raw": require_airtable_field(
+                fields, "Job Status", record_id=record_id, table_hint="ATS"
+            ),
             "job_category_raw": category_raw,
             "x_url": None,
-            "non_negotiables": fields.get("Non Negotiables") or None,
-            "nice_to_have": fields.get("Nice-to-have") or None,
-            "projected_salary": fields.get("Projected Salary") or None,
+            "non_negotiables": require_airtable_field(
+                fields, "Non Negotiables", record_id=record_id, table_hint="ATS"
+            ),
+            "nice_to_have": require_airtable_field(
+                fields, "Nice-to-have", record_id=record_id, table_hint="ATS"
+            ),
+            "projected_salary": require_airtable_field(
+                fields, "Projected Salary", record_id=record_id, table_hint="ATS"
+            ),
         }
 
     def replace_matches_for_job(
