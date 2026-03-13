@@ -749,7 +749,7 @@ SKILL_MIN_THRESHOLD = 0.0
     },
     description="Computed matches between jobs and candidates with scores (one partition per job)",
     group_name="matching",
-    code_version="2.18.0",  # v2.18.0: weights from blend of canonical match categories only; match set only Talent categories
+    code_version="2.18.1",  # v2.18.1: log resolved match_categories_norm for debugging
     io_manager_key="postgres_io",
     required_resource_keys={"matchmaking"},
     op_tags={
@@ -882,6 +882,10 @@ def matches(
             job_category,
             openrouter=getattr(context.resources, "openrouter", None),
             context=context,
+        )
+        context.log.info(
+            f"[matches] record_id={record_id} job_category={job_category!r} -> "
+            f"match_categories_norm={sorted(job_match_categories_norm) or '(none)'}"
         )
         weights = matchmaking.get_weights_for_match_categories(job_match_categories_norm)
         if not must_have:
