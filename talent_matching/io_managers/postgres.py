@@ -502,7 +502,9 @@ class PostgresMetricsIOManager(ConfigurableIOManager):
 
         # Infer region from country when missing (aligns with matchmaking location_filter)
         if location_country and (not location_region or not str(location_region).strip()):
-            country_aliases, region_countries = load_location_maps(session)
+            country_aliases, region_countries, _city_aliases, _region_aliases = load_location_maps(
+                session
+            )
             inferred = get_region_for_country(
                 location_country,
                 country_aliases=country_aliases,

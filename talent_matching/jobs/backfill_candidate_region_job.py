@@ -20,7 +20,7 @@ from talent_matching.models.candidates import NormalizedCandidate
 def backfill_candidate_region(context: OpExecutionContext) -> dict:
     """Select candidates with location_country and missing location_region; set region from mapping."""
     session = get_session()
-    country_aliases, region_countries = load_location_maps(session)
+    country_aliases, region_countries, _city_aliases, _region_aliases = load_location_maps(session)
     rows = session.execute(
         select(NormalizedCandidate.id, NormalizedCandidate.location_country).where(
             NormalizedCandidate.location_country.is_not(None),

@@ -215,6 +215,229 @@ async def cluster_new_locations(
 
 
 # ---------------------------------------------------------------------------
+# 3. City bags (canonical city slug + aliases)
+# ---------------------------------------------------------------------------
+
+
+def _build_assign_cities_prompt(
+    existing_bags: list[dict[str, Any]],
+    unprocessed_strings: list[str],
+) -> str:
+    bags_text = json.dumps(existing_bags)
+    names_text = json.dumps(unprocessed_strings)
+    return f"""We have existing **city bags** (each bag has one canonical city slug, e.g. new_york, and a list of equivalent aliases: abbreviations, alternate spellings). Below are **new location strings** that are likely cities. For each new string, assign it to the canonical of an existing bag if it refers to the same city (e.g. "NYC" → new_york, "New York City" → new_york). If no existing bag fits, put the string in new_groups. Use only canonicals from the existing bags.
+
+Rules:
+- Same city only: abbreviations and alternate names for the same city go to that bag.
+- Canonical is a lowercase slug (e.g. new_york, london, san_francisco). Use only canonicals from existing bags.
+- If the string is a country or region (e.g. USA, Europe), put it in new_groups — we will not add those to the city table.
+- When in doubt, put in new_groups.
+
+Existing bags (canonical + aliases):
+{bags_text}
+
+Unprocessed strings (assign each to a bag or to new_groups):
+{names_text}
+
+Return valid JSON only:
+- "assignments": array of {{ "location": "<string>", "assign_to_canonical": "<existing city slug>" }}
+- "new_groups": array of strings that did not match any bag
+
+Every unprocessed string must appear in exactly one of assignments or new_groups."""
+
+
+async def assign_cities_to_bags(
+    openrouter: "OpenRouterResource",
+    existing_bags: list[dict[str, Any]],
+    unprocessed_strings: list[str],
+    *,
+    model: str | None = None,
+    dagster_log: Any = None,
+) -> dict[str, Any]:
+    """Assign unprocessed city-like strings to existing city bags or new_groups."""
+    if not unprocessed_strings:
+        return {"assignments": [], "new_groups": []}
+
+    bags_for_prompt = [
+        {"canonical": b["canonical"], "aliases": b["aliases"]} for b in existing_bags
+    ]
+    prompt = _build_assign_cities_prompt(bags_for_prompt, unprocessed_strings)
+    response = await openrouter.complete(
+        messages=[{"role": "user", "content": prompt}],
+        model=model or DEFAULT_MODEL,
+        operation="city_assign_to_bags",
+        response_format={"type": "json_object"},
+        temperature=0.0,
+        max_tokens=MAX_OUTPUT_TOKENS,
+    )
+    content = response["choices"][0]["message"]["content"]
+    data = json.loads(content)
+    assignments = data.get("assignments") or []
+    new_groups = data.get("new_groups") or []
+    if not isinstance(assignments, list):
+        assignments = []
+    if not isinstance(new_groups, list):
+        new_groups = []
+    return {"assignments": assignments, "new_groups": new_groups}
+
+
+def _build_cluster_cities_prompt(location_strings: list[str]) -> str:
+    names_text = json.dumps(location_strings)
+    return f"""Group the following location strings into clusters that refer to the same **city**. Each cluster has one **canonical** (a lowercase slug, e.g. new_york, london, san_francisco — use underscores) and **aliases** (the other strings: abbreviations, alternate spellings). If a string has no equivalents, include it as a cluster with that string as canonical (slug-ified) and empty aliases.
+
+Location strings (these are city-like only; do not cluster countries or regions):
+{names_text}
+
+Return valid JSON only:
+- "clusters": array of {{ "canonical": "<city slug, lowercase, underscores>", "aliases": ["<other string>", ...] }}
+
+Rules:
+- Every string must appear exactly once (as canonical or in aliases).
+- Canonical must be a city slug (e.g. new_york), not a country name.
+- When in doubt, singleton cluster."""
+
+
+async def cluster_new_cities(
+    openrouter: "OpenRouterResource",
+    location_strings: list[str],
+    *,
+    model: str | None = None,
+    dagster_log: Any = None,
+) -> list[dict[str, Any]]:
+    """Cluster unmatched city-like strings into new city bags (canonical slug + aliases)."""
+    if not location_strings:
+        return []
+
+    prompt = _build_cluster_cities_prompt(location_strings)
+    response = await openrouter.complete(
+        messages=[{"role": "user", "content": prompt}],
+        model=model or DEFAULT_MODEL,
+        operation="city_clustering",
+        response_format={"type": "json_object"},
+        temperature=0.0,
+        max_tokens=MAX_OUTPUT_TOKENS,
+    )
+    content = response["choices"][0]["message"]["content"]
+    data = json.loads(content)
+    if not isinstance(data, dict) or "clusters" not in data:
+        raise ValueError('city_clustering: expected { "clusters": [...] }')
+    clusters = data["clusters"]
+    if not isinstance(clusters, list):
+        return []
+    return [c for c in clusters if isinstance(c, dict) and "canonical" in c]
+
+
+# ---------------------------------------------------------------------------
+# 4. Region bags (canonical region name + aliases)
+# ---------------------------------------------------------------------------
+
+
+def _build_assign_regions_prompt(
+    existing_bags: list[dict[str, Any]],
+    unprocessed_strings: list[str],
+) -> str:
+    bags_text = json.dumps(existing_bags)
+    names_text = json.dumps(unprocessed_strings)
+    return f"""We have existing **region bags** (each bag has one canonical region name, e.g. europe, asia, and a list of equivalent aliases: abbreviations like EU, EMEA). Below are **new location strings** that are likely regions. For each new string, assign it to the canonical of an existing bag if it refers to the same region. If no existing bag fits, put the string in new_groups. Use only canonicals from the existing bags.
+
+Rules:
+- Same region only. Use only canonicals from existing bags (lowercase).
+- If the string is a country or city, put it in new_groups.
+- When in doubt, put in new_groups.
+
+Existing bags (canonical + aliases):
+{bags_text}
+
+Unprocessed strings:
+{names_text}
+
+Return valid JSON only:
+- "assignments": array of {{ "location": "<string>", "assign_to_canonical": "<existing region>" }}
+- "new_groups": array of strings that did not match any bag
+
+Every unprocessed string must appear in exactly one of assignments or new_groups."""
+
+
+async def assign_regions_to_bags(
+    openrouter: "OpenRouterResource",
+    existing_bags: list[dict[str, Any]],
+    unprocessed_strings: list[str],
+    *,
+    model: str | None = None,
+    dagster_log: Any = None,
+) -> dict[str, Any]:
+    """Assign unprocessed region-like strings to existing region bags or new_groups."""
+    if not unprocessed_strings:
+        return {"assignments": [], "new_groups": []}
+
+    bags_for_prompt = [
+        {"canonical": b["canonical"], "aliases": b["aliases"]} for b in existing_bags
+    ]
+    prompt = _build_assign_regions_prompt(bags_for_prompt, unprocessed_strings)
+    response = await openrouter.complete(
+        messages=[{"role": "user", "content": prompt}],
+        model=model or DEFAULT_MODEL,
+        operation="region_assign_to_bags",
+        response_format={"type": "json_object"},
+        temperature=0.0,
+        max_tokens=MAX_OUTPUT_TOKENS,
+    )
+    content = response["choices"][0]["message"]["content"]
+    data = json.loads(content)
+    assignments = data.get("assignments") or []
+    new_groups = data.get("new_groups") or []
+    if not isinstance(assignments, list):
+        assignments = []
+    if not isinstance(new_groups, list):
+        new_groups = []
+    return {"assignments": assignments, "new_groups": new_groups}
+
+
+def _build_cluster_regions_prompt(location_strings: list[str]) -> str:
+    names_text = json.dumps(location_strings)
+    return f"""Group the following location strings into clusters that refer to the same **region** (e.g. Europe, EMEA, Asia-Pacific). Each cluster has one **canonical** (lowercase region name, e.g. europe, emea, apac) and **aliases** (the other strings). If a string has no equivalents, include it as a singleton cluster.
+
+Location strings (region-like only):
+{names_text}
+
+Return valid JSON only:
+- "clusters": array of {{ "canonical": "<region name, lowercase>", "aliases": ["<other string>", ...] }}
+
+Rules:
+- Every string must appear exactly once. Canonical must be a region name, not a country."""
+
+
+async def cluster_new_regions(
+    openrouter: "OpenRouterResource",
+    location_strings: list[str],
+    *,
+    model: str | None = None,
+    dagster_log: Any = None,
+) -> list[dict[str, Any]]:
+    """Cluster unmatched region-like strings into new region bags."""
+    if not location_strings:
+        return []
+
+    prompt = _build_cluster_regions_prompt(location_strings)
+    response = await openrouter.complete(
+        messages=[{"role": "user", "content": prompt}],
+        model=model or DEFAULT_MODEL,
+        operation="region_clustering",
+        response_format={"type": "json_object"},
+        temperature=0.0,
+        max_tokens=MAX_OUTPUT_TOKENS,
+    )
+    content = response["choices"][0]["message"]["content"]
+    data = json.loads(content)
+    if not isinstance(data, dict) or "clusters" not in data:
+        raise ValueError('region_clustering: expected { "clusters": [...] }')
+    clusters = data["clusters"]
+    if not isinstance(clusters, list):
+        return []
+    return [c for c in clusters if isinstance(c, dict) and "canonical" in c]
+
+
+# ---------------------------------------------------------------------------
 # Flat map (used by seed script when no bags exist yet)
 # ---------------------------------------------------------------------------
 

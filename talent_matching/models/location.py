@@ -29,6 +29,42 @@ class LocationCountryAlias(Base):
     added_by: Mapped[str] = mapped_column(String(50), default="seed", nullable=False)
 
 
+class LocationCityAlias(Base):
+    """Alias mapping to a canonical city slug.
+
+    Example: "ny", "nyc", "new york city" -> "new_york".
+    Used so different spellings of the same city match in location filter.
+    """
+
+    __tablename__ = "location_city_aliases"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    city_canonical: Mapped[str] = mapped_column(Text, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    added_by: Mapped[str] = mapped_column(String(50), default="llm", nullable=False)
+
+
+class LocationRegionAlias(Base):
+    """Alias mapping to a canonical region name.
+
+    Example: "eu", "european union" -> "europe".
+    Used so different spellings of the same region match.
+    """
+
+    __tablename__ = "location_region_aliases"
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    region_canonical: Mapped[str] = mapped_column(Text, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    added_by: Mapped[str] = mapped_column(String(50), default="llm", nullable=False)
+
+
 class LocationRegionCountry(Base):
     """Region-to-country mapping (one row per region, country pair).
 

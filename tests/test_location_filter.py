@@ -183,6 +183,52 @@ class TestCandidateMatchesLocation:
             == "europe"
         )
 
+    def test_city_aliases_same_slug_matches(self):
+        """Candidate NYC and job New York both resolve to city slug new_york -> match."""
+        city_aliases = {
+            "ny": "new_york",
+            "nyc": "new_york",
+            "new york": "new_york",
+            "new york city": "new_york",
+        }
+        candidate = {"location_region": None, "location_country": None, "location_city": "NYC"}
+        assert (
+            candidate_matches_location(
+                candidate,
+                ["New York"],
+                city_aliases=city_aliases,
+            )
+            is True
+        )
+        assert (
+            candidate_matches_location(
+                candidate,
+                ["New York City"],
+                city_aliases=city_aliases,
+            )
+            is True
+        )
+
+    def test_region_aliases_eu_matches_europe(self):
+        """Job EU and candidate Europe both resolve to region europe -> match."""
+        region_aliases = {"eu": "europe", "emea": "europe"}
+        region_countries = {"europe": {"germany", "france"}}
+        candidate = {"location_region": "EU", "location_country": None, "location_city": None}
+        assert (
+            candidate_matches_location(
+                candidate,
+                ["Europe"],
+                region_countries=region_countries,
+                region_aliases=region_aliases,
+            )
+            is True
+        )
+        assert job_locations_to_regions(
+            ["EU"],
+            region_countries=region_countries,
+            region_aliases=region_aliases,
+        ) == {"europe"}
+
 
 class TestCandidatePassesLocationOrTimezone:
     """Tests for candidate_passes_location_or_timezone (location or same/adjacent timezone)."""

@@ -703,7 +703,7 @@ def location_prefiltered_candidates(
 
     # Load DB-backed location maps (fallback to hardcoded when empty)
     session = get_session()
-    country_aliases, region_countries = load_location_maps(session)
+    country_aliases, region_countries, city_aliases, region_aliases = load_location_maps(session)
     session.close()
 
     # Step 1: strict (exact location or same/adjacent timezone)
@@ -716,6 +716,8 @@ def location_prefiltered_candidates(
             job_timezone,
             country_aliases=country_aliases,
             region_countries=region_countries,
+            city_aliases=city_aliases,
+            region_aliases=region_aliases,
         )
     ]
     if len(filtered) >= MIN_POOL_SIZE:
@@ -730,6 +732,7 @@ def location_prefiltered_candidates(
         job_locations,
         country_aliases=country_aliases,
         region_countries=region_countries,
+        region_aliases=region_aliases,
     )
     if allowed_countries:
         filtered = [
@@ -749,6 +752,7 @@ def location_prefiltered_candidates(
         job_locations,
         country_aliases=country_aliases,
         region_countries=region_countries,
+        region_aliases=region_aliases,
     )
     if allowed_regions:
         filtered = [
@@ -759,6 +763,7 @@ def location_prefiltered_candidates(
                 allowed_regions,
                 country_aliases=country_aliases,
                 region_countries=region_countries,
+                region_aliases=region_aliases,
             )
         ]
 

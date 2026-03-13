@@ -33,7 +33,12 @@ from talent_matching.models.ground_truth import GroundTruthOutcome
 from talent_matching.models.job_category_prompts import JobCategoryPromptsRecord
 from talent_matching.models.jobs import JobRequiredSkill, NormalizedJob
 from talent_matching.models.llm_costs import LLMCost
-from talent_matching.models.location import LocationCountryAlias, LocationRegionCountry
+from talent_matching.models.location import (
+    LocationCityAlias,
+    LocationCountryAlias,
+    LocationRegionAlias,
+    LocationRegionCountry,
+)
 from talent_matching.models.location_timezones import LocationTimezone
 from talent_matching.models.matches import Match
 from talent_matching.models.raw import RawCandidate, RawJob
@@ -92,7 +97,9 @@ __all__ = [
     "CandidateVector",
     "JobVector",
     # Location aliases and region-countries (DB-backed location matching)
+    "LocationCityAlias",
     "LocationCountryAlias",
+    "LocationRegionAlias",
     "LocationRegionCountry",
     # Location Timezones
     "LocationTimezone",

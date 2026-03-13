@@ -14,6 +14,8 @@ from talent_matching.jobs import (
     candidate_vectors_job,
     job_ingest_job,
     job_pipeline_job,
+    location_normalization_job,
+    location_normalization_schedule,
     matchmaking_backfill_job,
     sample_candidates_job,
     skill_normalization_job,
@@ -75,7 +77,11 @@ class TestJobsExports:
 
     def test_schedules_exported(self):
         assert skill_normalization_schedule.name == "skill_normalization_daily"
+        assert location_normalization_schedule.name == "location_normalization_daily"
         assert timezone_lookup_schedule.name == "timezone_lookup_daily"
+
+    def test_location_normalization_job_exported(self):
+        assert location_normalization_job.name == "location_normalization_job"
 
     def test_all_jobs_count(self):
         assert len(all_jobs) == 16
